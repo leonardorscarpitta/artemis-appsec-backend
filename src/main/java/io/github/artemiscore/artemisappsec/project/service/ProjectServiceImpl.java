@@ -54,11 +54,11 @@ class ProjectServiceImpl implements ProjectService {
 	@Override
 	@Transactional
 	public ProjectDetails create(UUID organizationId, CreateProjectCommand command, String actor) {
-		String name = nameFromUrl(command.url());
+		String name = nameFromUrl(command.url()) + (command.directory() == null ? "" : "-" + command.directory().replace('/', '-'));
 		if (projects.existsByOrganizationIdAndName(organizationId, name)) {
 			throw new BusinessRuleException("A repository named '%s' is already connected".formatted(name));
 		}
-		Project project = new Project(organizationId, name, command.url(), command.branch(), command.stack());
+		Project project = new Project(organizationId, name, command.url(), command.branch(), command.directory(), command.stack());
 		applySettings(project, command.settings());
 		applyPipeline(project, command.pipeline());
 		Project saved = projects.save(project);
@@ -86,6 +86,12 @@ class ProjectServiceImpl implements ProjectService {
 		Project project = load(organizationId, name);
 		applyPipeline(project, stages);
 		return toDetails(project);
+	}
+
+	@Override
+	@Transactional
+	public void delete(UUID organizationId, String name) {
+		projects.delete(load(organizationId, name));
 	}
 
 	@Override
@@ -118,7 +124,7 @@ class ProjectServiceImpl implements ProjectService {
 
 	private static ProjectSummary toSummary(Project p, Map<UUID, Long> openFindings) {
 		Long open = openFindings == null ? null : openFindings.getOrDefault(p.getId(), 0L);
-		return new ProjectSummary(p.getId(), p.getOrganizationId(), p.getName(), p.getSshUrl(), p.getBranch(), p.getStack(), p.getScanSchedule(),
+		return new ProjectSummary(p.getId(), p.getOrganizationId(), p.getName(), p.getSshUrl(), p.getBranch(), p.getDirectory(), p.getStack(), p.getScanSchedule(),
 				p.getLastScanAt(), open);
 	}
 

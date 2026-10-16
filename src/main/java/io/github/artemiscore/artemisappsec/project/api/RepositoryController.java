@@ -4,6 +4,7 @@ import java.net.URI;
 import java.util.List;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -65,6 +66,14 @@ class RepositoryController {
 	ProjectDetails updatePipeline(Tenant tenant, @PathVariable String name,
 			@RequestBody List<@Valid StageUpdate> stages) {
 		return projects.updatePipeline(tenant.organizationId(), name, stages);
+	}
+
+	/** Removes the repository with its findings, runs, reports, deploy keys and risk acceptances. */
+	@DeleteMapping("/repositories/{name}")
+	@RequiresPermission(Permission.PIPELINES)
+	ResponseEntity<Void> delete(Tenant tenant, @PathVariable String name) {
+		projects.delete(tenant.organizationId(), name);
+		return ResponseEntity.noContent().build();
 	}
 
 	@GetMapping("/pipeline/stages")
