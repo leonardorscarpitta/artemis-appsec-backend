@@ -56,9 +56,7 @@ class TenantInterceptor implements HandlerInterceptor {
 
 	static boolean isOrganizationScoped(HandlerMethod method) {
 		return !method.hasMethodAnnotation(WithoutOrganization.class)
-				&& !method.getBeanType().isAnnotationPresent(WithoutOrganization.class)
-				&& method.getBeanType().getPackageName().startsWith("io.github.artemiscore.artemisappsec")
-				&& !method.getBeanType().getPackageName().endsWith(".scanjob.api");
+				&& !method.getBeanType().isAnnotationPresent(WithoutOrganization.class);
 	}
 
 	private static Permission requiredPermission(HandlerMethod method, HttpServletRequest request) {
