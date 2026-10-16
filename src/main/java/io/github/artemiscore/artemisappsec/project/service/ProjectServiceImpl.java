@@ -12,6 +12,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.github.artemiscore.artemisappsec.project.domain.Folder;
 import io.github.artemiscore.artemisappsec.project.domain.PipelineStageConfig;
 import io.github.artemiscore.artemisappsec.project.domain.Project;
 import io.github.artemiscore.artemisappsec.project.persistence.ProjectRepository;
@@ -54,11 +55,11 @@ class ProjectServiceImpl implements ProjectService {
 	@Override
 	@Transactional
 	public ProjectDetails create(UUID organizationId, CreateProjectCommand command, String actor) {
-		String name = nameFromUrl(command.url()) + (command.directory() == null ? "" : "-" + command.directory().replace('/', '-'));
+		String name = nameFromUrl(command.url());
 		if (projects.existsByOrganizationIdAndName(organizationId, name)) {
 			throw new BusinessRuleException("A repository named '%s' is already connected".formatted(name));
 		}
-		Project project = new Project(organizationId, name, command.url(), command.branch(), command.directory(), command.stack());
+		Project project = new Project(organizationId, name, command.url(), command.branch(), command.stack());
 		applySettings(project, command.settings());
 		applyPipeline(project, command.pipeline());
 		Project saved = projects.save(project);
@@ -106,6 +107,11 @@ class ProjectServiceImpl implements ProjectService {
 	private static void applySettings(Project project, ProjectSettings settings) {
 		project.updateSettings(settings.schedule(), settings.automaticActions(), settings.dockerfileMode(),
 				settings.customDockerfile());
+		long distinct = settings.folders().stream().map(ProjectFolder::path).distinct().count();
+		if (distinct != settings.folders().size()) {
+			throw new BusinessRuleException("Each monorepo folder can be listed only once");
+		}
+		project.updateFolders(settings.folders().stream().map(f -> new Folder(f.path(), f.stack())).toList());
 	}
 
 	private static void applyPipeline(Project project, List<StageUpdate> stages) {
@@ -124,14 +130,18 @@ class ProjectServiceImpl implements ProjectService {
 
 	private static ProjectSummary toSummary(Project p, Map<UUID, Long> openFindings) {
 		Long open = openFindings == null ? null : openFindings.getOrDefault(p.getId(), 0L);
-		return new ProjectSummary(p.getId(), p.getOrganizationId(), p.getName(), p.getSshUrl(), p.getBranch(), p.getDirectory(), p.getStack(), p.getScanSchedule(),
+		return new ProjectSummary(p.getId(), p.getOrganizationId(), p.getName(), p.getSshUrl(), p.getBranch(), p.getStack(), folders(p), p.getScanSchedule(),
 				p.getLastScanAt(), open);
 	}
 
 	private ProjectDetails toDetails(Project p) {
 		ProjectSettings settings = new ProjectSettings(p.getScanSchedule(), p.getAutomaticActions(), p.getDockerfileMode(),
-				p.getCustomDockerfile());
+				p.getCustomDockerfile(), folders(p));
 		return new ProjectDetails(toSummary(p, openFindings(List.of(p))), settings, p.getPipeline().stream().map(ProjectServiceImpl::toView).toList());
+	}
+
+	private static List<ProjectFolder> folders(Project p) {
+		return p.getFolders().stream().map(f -> new ProjectFolder(f.getPath(), f.getStack())).toList();
 	}
 
 	private static PipelineStageView toView(PipelineStageConfig c) {

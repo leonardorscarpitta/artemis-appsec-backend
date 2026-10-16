@@ -214,13 +214,13 @@ Repository URLs may be `https://host/owner/repo(.git)` or SSH (`git@host:owner/r
 
 | Method and path | Body | Response |
 | --- | --- | --- |
-| `POST /internal/v1/jobs/claim` | — | `204` when nothing is queued; `200` `{runId, number, repository: {name, cloneUrl, branch, path}, stages: [{id, tool, failOn}], limits: {stageTimeoutSeconds, maxRepoSizeMb}}` |
+| `POST /internal/v1/jobs/claim` | — | `204` when nothing is queued; `200` `{runId, number, repository: {name, cloneUrl, branch, paths}, stages: [{id, tool, failOn}], limits: {stageTimeoutSeconds, maxRepoSizeMb}}` |
 | `POST /internal/v1/jobs/{runId}/source` | `{commitSha, commitMessage}` | `204` |
 | `PUT /internal/v1/jobs/{runId}/stages/{stage}` | `{status: completed\|skipped\|error, tool, durationSeconds, log, findings: [Finding]}` | `{status: passed\|warning\|failed\|skipped}`; `409` if the run is not running or the stage was already reported; `400` if the tool differs from the queued one |
 | `POST /internal/v1/jobs/{runId}/complete` | — | `204` |
 | `POST /internal/v1/jobs/{runId}/fail` | `{reason}` | `204` (e.g. the repository could not be cloned) |
 
-**Monorepos:** a repository may set an optional `directory` on creation (`POST /api/v1/repositories` `{…, directory: "frontend"}`; relative path, letters/digits/`.`/`_`/`-` segments, no `.`/`..`, max 120 chars; immutable). Its name becomes `<repo>-<directory with / → ->` so the same URL can be added once per folder. The claim sends it as `repository.path`; the runner scans only that folder (fails the run if it does not exist on the branch) and prefixes finding paths with it so they stay relative to the repository root.
+**Monorepos:** repository settings carry `folders: [{path, stack}]` (create and `PUT /settings`; empty = whole repository; up to 20 unique relative paths of letters/digits/`.`/`_`/`-` segments, no `.`/`..`, ≤ 120 chars; table `project_folder`, V14). The repository's `stack` becomes the first folder's. The claim sends `repository.paths`; the runner fails the run if a folder is missing on the branch, otherwise runs every stage on each folder in turn and merges the results (findings capped at 5 000 per stage, logs prefixed with `[folder]`), prefixing finding paths so they stay relative to the repository root.
 
 **Removing a repository:** `DELETE /api/v1/repositories/{name}` (`pipelines` permission) → `204`; the database cascades its findings, runs, reports, deploy keys and risk acceptances.
 
