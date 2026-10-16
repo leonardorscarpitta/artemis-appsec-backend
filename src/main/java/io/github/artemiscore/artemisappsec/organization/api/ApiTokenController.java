@@ -14,10 +14,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import io.github.artemiscore.artemisappsec.organization.domain.Permission;
 import io.github.artemiscore.artemisappsec.organization.service.ApiTokenService;
 import io.github.artemiscore.artemisappsec.organization.service.ApiTokenView;
 import io.github.artemiscore.artemisappsec.organization.service.CreateApiTokenCommand;
 import io.github.artemiscore.artemisappsec.organization.service.CreatedApiToken;
+import io.github.artemiscore.artemisappsec.organization.service.Tenant;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
@@ -33,21 +35,23 @@ class ApiTokenController {
 	}
 
 	@GetMapping
-	List<ApiTokenView> list() {
-		return tokens.findAll();
+	List<ApiTokenView> list(Tenant tenant) {
+		return tokens.findAll(tenant.organizationId());
 	}
 
 	@PostMapping
-	ResponseEntity<CreatedApiToken> create(@Valid @RequestBody CreateApiTokenCommand command) {
-		CreatedApiToken created = tokens.create(command);
+	@RequiresPermission(Permission.INTEGRATIONS)
+	ResponseEntity<CreatedApiToken> create(Tenant tenant, @Valid @RequestBody CreateApiTokenCommand command) {
+		CreatedApiToken created = tokens.create(tenant.organizationId(), command);
 		return ResponseEntity.created(URI.create("/api/v1/api-tokens/" + created.token().id()))
 			.cacheControl(CacheControl.noStore())
 			.body(created);
 	}
 
 	@DeleteMapping("/{id}")
-	ResponseEntity<Void> revoke(@PathVariable UUID id) {
-		tokens.revoke(id);
+	@RequiresPermission(Permission.INTEGRATIONS)
+	ResponseEntity<Void> revoke(Tenant tenant, @PathVariable UUID id) {
+		tokens.revoke(tenant.organizationId(), id);
 		return ResponseEntity.noContent().build();
 	}
 }

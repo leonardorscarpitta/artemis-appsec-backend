@@ -7,17 +7,22 @@ import io.github.artemiscore.artemisappsec.organization.domain.Role;
 
 public interface TeamService {
 
-	List<MemberView> findMembers();
+	List<MemberView> findMembers(UUID organizationId);
 
-	MemberView changeRole(UUID memberId, Role role);
+	MemberView changeRole(Tenant tenant, UUID memberId, Role role);
 
-	List<InvitationView> findInvitations();
+	void removeMember(Tenant tenant, UUID memberId);
 
-	InvitationView invite(InviteCommand command);
+	/** The current owner becomes an admin. */
+	List<MemberView> transferOwnership(Tenant tenant, UUID memberId);
 
-	InvitationView resend(UUID invitationId);
+	List<InvitationView> findInvitations(UUID organizationId);
 
-	void revokeInvitation(UUID invitationId);
+	InvitationView invite(Tenant tenant, InviteCommand command);
+
+	InvitationView resend(UUID organizationId, UUID invitationId);
+
+	void revokeInvitation(UUID organizationId, UUID invitationId);
 
 	List<RoleView> roles();
 }

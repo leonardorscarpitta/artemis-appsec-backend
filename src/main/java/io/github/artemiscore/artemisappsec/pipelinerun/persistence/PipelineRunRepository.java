@@ -1,6 +1,7 @@
 package io.github.artemiscore.artemisappsec.pipelinerun.persistence;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -15,7 +16,7 @@ import io.github.artemiscore.artemisappsec.pipelinerun.domain.RunStatus;
 
 public interface PipelineRunRepository extends JpaRepository<PipelineRun, UUID>, JpaSpecificationExecutor<PipelineRun> {
 
-	long countByStartedAtGreaterThanEqual(Instant since);
+	long countByProjectIdInAndStartedAtGreaterThanEqual(Collection<UUID> projectIds, Instant since);
 
 	@EntityGraph(attributePaths = "stages")
 	Optional<PipelineRun> findByNumber(long number);
@@ -24,7 +25,7 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, UUID>,
 	Optional<PipelineRun> findWithStagesById(UUID id);
 
 	@EntityGraph(attributePaths = "stages")
-	List<PipelineRun> findByStartedAtAfter(Instant since);
+	List<PipelineRun> findByProjectIdInAndStartedAtAfter(Collection<UUID> projectIds, Instant since);
 
 	@EntityGraph(attributePaths = "stages")
 	List<PipelineRun> findByStatusAndStartedAtBefore(RunStatus status, Instant before);

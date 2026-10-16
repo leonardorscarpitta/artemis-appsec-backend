@@ -1,7 +1,6 @@
 package io.github.artemiscore.artemisappsec.project.api;
 
 import java.net.URI;
-import java.security.Principal;
 import java.util.List;
 
 import org.springframework.http.ResponseEntity;
@@ -13,6 +12,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import io.github.artemiscore.artemisappsec.organization.api.RequiresPermission;
+import io.github.artemiscore.artemisappsec.organization.api.WithoutOrganization;
+import io.github.artemiscore.artemisappsec.organization.domain.Permission;
+import io.github.artemiscore.artemisappsec.organization.service.Tenant;
 import io.github.artemiscore.artemisappsec.project.service.CreateProjectCommand;
 import io.github.artemiscore.artemisappsec.project.service.PipelineStageView;
 import io.github.artemiscore.artemisappsec.project.service.ProjectDetails;
@@ -28,9 +31,6 @@ import jakarta.validation.Valid;
 @Tag(name = "Repositories", description = "Monitored code repositories, their scan settings and pipelines")
 class RepositoryController {
 
-	/** Recorded as the actor when authentication is disabled (dev profile). */
-	private static final String ANONYMOUS_ACTOR = "local-developer";
-
 	private final ProjectService projects;
 
 	RepositoryController(ProjectService projects) {
@@ -38,32 +38,37 @@ class RepositoryController {
 	}
 
 	@GetMapping("/repositories")
-	List<ProjectSummary> list() {
-		return projects.findAll();
+	List<ProjectSummary> list(Tenant tenant) {
+		return projects.findAll(tenant.organizationId());
 	}
 
 	@GetMapping("/repositories/{name}")
-	ProjectDetails get(@PathVariable String name) {
-		return projects.getByName(name);
+	ProjectDetails get(Tenant tenant, @PathVariable String name) {
+		return projects.getByName(tenant.organizationId(), name);
 	}
 
 	@PostMapping("/repositories")
-	ResponseEntity<ProjectDetails> create(@Valid @RequestBody CreateProjectCommand command, Principal principal) {
-		ProjectDetails created = projects.create(command, principal != null ? principal.getName() : ANONYMOUS_ACTOR);
+	@RequiresPermission(Permission.PIPELINES)
+	ResponseEntity<ProjectDetails> create(Tenant tenant, @Valid @RequestBody CreateProjectCommand command) {
+		ProjectDetails created = projects.create(tenant.organizationId(), command, tenant.actor());
 		return ResponseEntity.created(URI.create("/api/v1/repositories/" + created.project().name())).body(created);
 	}
 
 	@PutMapping("/repositories/{name}/settings")
-	ProjectDetails updateSettings(@PathVariable String name, @Valid @RequestBody ProjectSettings settings) {
-		return projects.updateSettings(name, settings);
+	@RequiresPermission(Permission.PIPELINES)
+	ProjectDetails updateSettings(Tenant tenant, @PathVariable String name, @Valid @RequestBody ProjectSettings settings) {
+		return projects.updateSettings(tenant.organizationId(), name, settings);
 	}
 
 	@PutMapping("/repositories/{name}/pipeline")
-	ProjectDetails updatePipeline(@PathVariable String name, @RequestBody List<@Valid StageUpdate> stages) {
-		return projects.updatePipeline(name, stages);
+	@RequiresPermission(Permission.PIPELINES)
+	ProjectDetails updatePipeline(Tenant tenant, @PathVariable String name,
+			@RequestBody List<@Valid StageUpdate> stages) {
+		return projects.updatePipeline(tenant.organizationId(), name, stages);
 	}
 
 	@GetMapping("/pipeline/stages")
+	@WithoutOrganization
 	List<PipelineStageView> stageCatalog() {
 		return projects.defaultPipeline();
 	}

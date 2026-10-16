@@ -31,7 +31,10 @@ public class Project {
 	@Id
 	private UUID id;
 
-	@Column(nullable = false, unique = true)
+	@Column(name = "organization_id", nullable = false)
+	private UUID organizationId;
+
+	@Column(nullable = false)
 	private String name;
 
 	@Column(name = "ssh_url", nullable = false)
@@ -73,8 +76,9 @@ public class Project {
 	protected Project() {
 	}
 
-	public Project(String name, String sshUrl, String branch, Stack stack) {
+	public Project(UUID organizationId, String name, String sshUrl, String branch, Stack stack) {
 		this.id = UUID.randomUUID();
+		this.organizationId = organizationId;
 		this.name = name;
 		this.sshUrl = sshUrl;
 		this.branch = branch;
@@ -117,6 +121,10 @@ public class Project {
 
 	public UUID getId() {
 		return id;
+	}
+
+	public UUID getOrganizationId() {
+		return organizationId;
 	}
 
 	public String getName() {

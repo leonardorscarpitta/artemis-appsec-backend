@@ -1,5 +1,7 @@
 package io.github.artemiscore.artemisappsec.policy.domain;
 
+import java.util.UUID;
+
 import io.github.artemiscore.artemisappsec.shared.domain.Severity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -17,7 +19,13 @@ public class RemediationSla {
 	public static final int MAX_DAYS = 365;
 
 	@Id
+	private UUID id;
+
+	@Column(name = "organization_id", nullable = false)
+	private UUID organizationId;
+
 	@Enumerated(EnumType.STRING)
+	@Column(nullable = false)
 	private Severity severity;
 
 	@Column(nullable = false)
@@ -26,7 +34,9 @@ public class RemediationSla {
 	protected RemediationSla() {
 	}
 
-	public RemediationSla(Severity severity, int days) {
+	public RemediationSla(UUID organizationId, Severity severity, int days) {
+		this.id = UUID.randomUUID();
+		this.organizationId = organizationId;
 		this.severity = severity;
 		setDays(days);
 	}

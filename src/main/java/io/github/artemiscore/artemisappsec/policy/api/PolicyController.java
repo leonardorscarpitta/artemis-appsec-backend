@@ -5,8 +5,6 @@ import java.util.List;
 import java.util.UUID;
 
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.authentication.AnonymousAuthenticationToken;
-import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -16,6 +14,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import io.github.artemiscore.artemisappsec.organization.api.RequiresPermission;
+import io.github.artemiscore.artemisappsec.organization.domain.Permission;
+import io.github.artemiscore.artemisappsec.organization.service.Tenant;
 import io.github.artemiscore.artemisappsec.policy.service.AcceptRiskCommand;
 import io.github.artemiscore.artemisappsec.policy.service.Policies;
 import io.github.artemiscore.artemisappsec.policy.service.PolicyService;
@@ -28,9 +29,6 @@ import jakarta.validation.Valid;
 @Tag(name = "Policies", description = "Organization-wide pipeline gates, remediation SLAs, license policy and risk acceptances")
 class PolicyController {
 
-	/** Recorded as approver when authentication is disabled (local development). */
-	private static final String SYSTEM_USER = "system";
-
 	private final PolicyService policies;
 
 	PolicyController(PolicyService policies) {
@@ -38,36 +36,32 @@ class PolicyController {
 	}
 
 	@GetMapping("/policies")
-	Policies get() {
-		return policies.get();
+	Policies get(Tenant tenant) {
+		return policies.get(tenant.organizationId());
 	}
 
 	@PutMapping("/policies")
-	Policies update(@Valid @RequestBody Policies body) {
-		return policies.update(body);
+	@RequiresPermission(Permission.PIPELINES)
+	Policies update(Tenant tenant, @Valid @RequestBody Policies body) {
+		return policies.update(tenant.organizationId(), body);
 	}
 
 	@GetMapping("/risk-acceptances")
-	List<RiskAcceptanceView> riskAcceptances() {
-		return policies.findRiskAcceptances();
+	List<RiskAcceptanceView> riskAcceptances(Tenant tenant) {
+		return policies.findRiskAcceptances(tenant.organizationId());
 	}
 
 	@PostMapping("/risk-acceptances")
-	ResponseEntity<RiskAcceptanceView> acceptRisk(@Valid @RequestBody AcceptRiskCommand command,
-			Authentication authentication) {
-		RiskAcceptanceView created = policies.acceptRisk(command, approver(authentication));
+	@RequiresPermission(Permission.TRIAGE)
+	ResponseEntity<RiskAcceptanceView> acceptRisk(Tenant tenant, @Valid @RequestBody AcceptRiskCommand command) {
+		RiskAcceptanceView created = policies.acceptRisk(tenant.organizationId(), command, tenant.actor());
 		return ResponseEntity.created(URI.create("/api/v1/risk-acceptances/" + created.id())).body(created);
 	}
 
 	@DeleteMapping("/risk-acceptances/{id}")
-	ResponseEntity<Void> revoke(@PathVariable UUID id) {
-		policies.revokeRiskAcceptance(id);
+	@RequiresPermission(Permission.TRIAGE)
+	ResponseEntity<Void> revoke(Tenant tenant, @PathVariable UUID id) {
+		policies.revokeRiskAcceptance(tenant.organizationId(), id);
 		return ResponseEntity.noContent().build();
-	}
-
-	private static String approver(Authentication authentication) {
-		boolean authenticated = authentication != null && authentication.isAuthenticated()
-				&& !(authentication instanceof AnonymousAuthenticationToken);
-		return authenticated ? authentication.getName() : SYSTEM_USER;
 	}
 }

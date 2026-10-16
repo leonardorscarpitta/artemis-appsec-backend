@@ -13,9 +13,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import io.github.artemiscore.artemisappsec.organization.domain.Permission;
 import io.github.artemiscore.artemisappsec.organization.service.AddDeployKeyCommand;
 import io.github.artemiscore.artemisappsec.organization.service.DeployKeyService;
 import io.github.artemiscore.artemisappsec.organization.service.DeployKeyView;
+import io.github.artemiscore.artemisappsec.organization.service.Tenant;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
@@ -31,19 +33,21 @@ class DeployKeyController {
 	}
 
 	@GetMapping
-	List<DeployKeyView> list() {
-		return keys.findAll();
+	List<DeployKeyView> list(Tenant tenant) {
+		return keys.findAll(tenant.organizationId());
 	}
 
 	@PostMapping
-	ResponseEntity<DeployKeyView> add(@Valid @RequestBody AddDeployKeyCommand command) {
-		DeployKeyView key = keys.add(command);
+	@RequiresPermission(Permission.INTEGRATIONS)
+	ResponseEntity<DeployKeyView> add(Tenant tenant, @Valid @RequestBody AddDeployKeyCommand command) {
+		DeployKeyView key = keys.add(tenant.organizationId(), command);
 		return ResponseEntity.created(URI.create("/api/v1/deploy-keys/" + key.id())).body(key);
 	}
 
 	@DeleteMapping("/{id}")
-	ResponseEntity<Void> revoke(@PathVariable UUID id) {
-		keys.revoke(id);
+	@RequiresPermission(Permission.INTEGRATIONS)
+	ResponseEntity<Void> revoke(Tenant tenant, @PathVariable UUID id) {
+		keys.revoke(tenant.organizationId(), id);
 		return ResponseEntity.noContent().build();
 	}
 }

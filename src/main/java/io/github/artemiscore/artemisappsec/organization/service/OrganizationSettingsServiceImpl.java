@@ -7,56 +7,72 @@ import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.github.artemiscore.artemisappsec.organization.domain.NotificationRule;
+import io.github.artemiscore.artemisappsec.organization.domain.Organization;
 import io.github.artemiscore.artemisappsec.organization.domain.OrganizationSettings;
+import io.github.artemiscore.artemisappsec.organization.persistence.OrganizationRepository;
 import io.github.artemiscore.artemisappsec.organization.persistence.OrganizationSettingsRepository;
-import io.github.artemiscore.artemisappsec.shared.error.BusinessRuleException;
 
 @Service
 @Transactional(readOnly = true)
 class OrganizationSettingsServiceImpl implements OrganizationSettingsService {
 
-	private static final String PROVIDER = "Authelia · OpenID Connect";
+	private static final String PROVIDER = "Keycloak · OpenID Connect";
 
 	private final OrganizationSettingsRepository settings;
+	private final OrganizationRepository organizations;
 
-	OrganizationSettingsServiceImpl(OrganizationSettingsRepository settings) {
+	OrganizationSettingsServiceImpl(OrganizationSettingsRepository settings, OrganizationRepository organizations) {
 		this.settings = settings;
+		this.organizations = organizations;
 	}
 
 	@Override
-	public OrganizationSettingsView get() {
-		return toView(load());
+	public OrganizationSettingsView get(UUID organizationId) {
+		return toView(organization(organizationId), load(organizationId));
 	}
 
 	@Override
 	@Transactional
-	public OrganizationSettingsView update(OrganizationSettingsView request) {
+	public OrganizationSettingsView update(UUID organizationId, OrganizationSettingsView request) {
 		var general = request.general();
 		var auth = request.authentication();
 		var retention = request.retention();
 		validateTimezone(general.timezone());
 		validateIssuer(auth.issuer());
 
-		OrganizationSettings current = load();
-		current.updateGeneral(general.name().strip(), general.slug(), general.defaultLanguage(), general.timezone());
+		Organization organization = organization(organizationId);
+		if (!organization.getSlug().equals(general.slug())) {
+			Slugs.requireAvailable(general.slug(), organizations);
+		}
+		organization.rename(general.name().strip(), general.slug());
+
+		OrganizationSettings current = load(organizationId);
+		current.updateGeneral(general.defaultLanguage(), general.timezone());
 		current.updateAuthentication(auth.issuer().strip(), auth.clientId(), auth.sessionTimeout(), auth.enforceSso());
 		current.updateNotifications(new HashSet<>(request.notifications()));
 		current.updateRetention(retention.findings(), retention.logs(), retention.reports());
-		return toView(settings.saveAndFlush(current));
+		return toView(organization, settings.saveAndFlush(current));
 	}
 
 	@Override
-	public void deleteOrganization() {
-		throw new BusinessRuleException("Deleting the organization is not available yet. Contact support.");
+	@Transactional
+	public void deleteOrganization(UUID organizationId) {
+		// Every table references the organization with ON DELETE CASCADE.
+		organizations.deleteById(organizationId);
 	}
 
-	private OrganizationSettings load() {
-		return settings.findById(OrganizationSettings.SINGLETON_ID)
+	private Organization organization(UUID id) {
+		return organizations.findById(id).orElseThrow(() -> new IllegalStateException("Organization row is missing"));
+	}
+
+	private OrganizationSettings load(UUID organizationId) {
+		return settings.findById(organizationId)
 			.orElseThrow(() -> new IllegalStateException("Organization settings row is missing"));
 	}
 
@@ -84,10 +100,10 @@ class OrganizationSettingsServiceImpl implements OrganizationSettingsService {
 		}
 	}
 
-	private static OrganizationSettingsView toView(OrganizationSettings s) {
+	private static OrganizationSettingsView toView(Organization o, OrganizationSettings s) {
 		Set<NotificationRule> rules = s.getNotifications();
 		return new OrganizationSettingsView(
-				new OrganizationSettingsView.General(s.getName(), s.getSlug(), s.getDefaultLanguage(), s.getTimezone()),
+				new OrganizationSettingsView.General(o.getName(), o.getSlug(), s.getDefaultLanguage(), s.getTimezone()),
 				new OrganizationSettingsView.Authentication(PROVIDER, s.getOidcIssuer(), s.getOidcClientId(),
 						s.isOidcClientSecretSet(), s.getSessionTimeout(), s.isEnforceSso()),
 				rules.stream()

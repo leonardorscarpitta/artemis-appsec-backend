@@ -1,10 +1,13 @@
 package io.github.artemiscore.artemisappsec.organization.service;
 
+import java.util.UUID;
+
 public interface OrganizationSettingsService {
 
-	OrganizationSettingsView get();
+	OrganizationSettingsView get(UUID organizationId);
 
-	OrganizationSettingsView update(OrganizationSettingsView settings);
+	OrganizationSettingsView update(UUID organizationId, OrganizationSettingsView settings);
 
-	void deleteOrganization();
+	/** Permanently deletes the organization and everything in it. */
+	void deleteOrganization(UUID organizationId);
 }

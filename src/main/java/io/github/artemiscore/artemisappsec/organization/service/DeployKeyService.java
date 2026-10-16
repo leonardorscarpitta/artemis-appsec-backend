@@ -5,9 +5,9 @@ import java.util.UUID;
 
 public interface DeployKeyService {
 
-	List<DeployKeyView> findAll();
+	List<DeployKeyView> findAll(UUID organizationId);
 
-	DeployKeyView add(AddDeployKeyCommand command);
+	DeployKeyView add(UUID organizationId, AddDeployKeyCommand command);
 
-	void revoke(UUID id);
+	void revoke(UUID organizationId, UUID id);
 }

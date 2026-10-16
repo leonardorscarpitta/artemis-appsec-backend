@@ -1,5 +1,7 @@
 package io.github.artemiscore.artemisappsec.policy.domain;
 
+import java.util.UUID;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -12,7 +14,12 @@ import jakarta.persistence.Table;
 public class LicenseRule {
 
 	@Id
-	@Column(name = "license_id")
+	private UUID id;
+
+	@Column(name = "organization_id", nullable = false)
+	private UUID organizationId;
+
+	@Column(name = "license_id", nullable = false)
 	private String licenseId;
 
 	@Enumerated(EnumType.STRING)
@@ -22,7 +29,9 @@ public class LicenseRule {
 	protected LicenseRule() {
 	}
 
-	public LicenseRule(String licenseId, LicenseDecision decision) {
+	public LicenseRule(UUID organizationId, String licenseId, LicenseDecision decision) {
+		this.id = UUID.randomUUID();
+		this.organizationId = organizationId;
 		this.licenseId = licenseId;
 		this.decision = decision;
 	}

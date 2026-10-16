@@ -1,5 +1,6 @@
 package io.github.artemiscore.artemisappsec.finding.service;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -23,8 +24,11 @@ class FindingStatsProvider implements ProjectFindingStats {
 	}
 
 	@Override
-	public Map<UUID, Long> openFindingsByProject() {
-		return findings.countByProjectAndStatusIn(List.of(FindingStatus.OPEN, FindingStatus.TRIAGED)).stream()
+	public Map<UUID, Long> openFindingsByProject(Collection<UUID> projectIds) {
+		if (projectIds.isEmpty()) {
+			return Map.of();
+		}
+		return findings.countByProjectAndStatusIn(projectIds, List.of(FindingStatus.OPEN, FindingStatus.TRIAGED)).stream()
 			.collect(Collectors.toMap(FindingRepository.ProjectCount::getProjectId, FindingRepository.ProjectCount::getTotal));
 	}
 }

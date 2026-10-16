@@ -1,10 +1,13 @@
 package io.github.artemiscore.artemisappsec.organization.service;
 
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,6 +16,7 @@ import io.github.artemiscore.artemisappsec.organization.domain.Member;
 import io.github.artemiscore.artemisappsec.organization.domain.Role;
 import io.github.artemiscore.artemisappsec.organization.persistence.InvitationRepository;
 import io.github.artemiscore.artemisappsec.organization.persistence.MemberRepository;
+import io.github.artemiscore.artemisappsec.shared.error.ApiProblemException;
 import io.github.artemiscore.artemisappsec.shared.error.BusinessRuleException;
 import io.github.artemiscore.artemisappsec.shared.error.ResourceNotFoundException;
 
@@ -29,49 +33,84 @@ class TeamServiceImpl implements TeamService {
 	}
 
 	@Override
-	public List<MemberView> findMembers() {
-		return members.findAllByOrderByCreatedAtAsc().stream().map(TeamServiceImpl::toView).toList();
+	public List<MemberView> findMembers(UUID organizationId) {
+		return members.findByOrganizationIdOrderByCreatedAtAsc(organizationId).stream().map(TeamServiceImpl::toView).toList();
 	}
 
 	@Override
 	@Transactional
-	public MemberView changeRole(UUID memberId, Role role) {
-		Member member = members.findById(memberId).orElseThrow(() -> new ResourceNotFoundException("Member", memberId));
+	public MemberView changeRole(Tenant tenant, UUID memberId, Role role) {
+		Member member = loadOther(tenant, memberId, "change your own role");
 		member.changeRole(role);
 		return toView(member);
 	}
 
 	@Override
-	public List<InvitationView> findInvitations() {
-		return invitations.findAllByOrderBySentAtDesc().stream().map(TeamServiceImpl::toView).toList();
+	@Transactional
+	public void removeMember(Tenant tenant, UUID memberId) {
+		Member member = loadOther(tenant, memberId, "remove yourself; leave the organization instead");
+		if (member.getRole() == Role.OWNER) {
+			throw new BusinessRuleException("The owner cannot be removed");
+		}
+		members.delete(member);
 	}
 
 	@Override
 	@Transactional
-	public InvitationView invite(InviteCommand command) {
+	public List<MemberView> transferOwnership(Tenant tenant, UUID memberId) {
+		if (tenant.role() != Role.OWNER || tenant.memberId() == null) {
+			throw new ApiProblemException(HttpStatus.FORBIDDEN, "forbidden", "Only the owner can transfer the ownership");
+		}
+		Member target = loadOther(tenant, memberId, "transfer the ownership to yourself");
+		if (!target.isActive()) {
+			throw new BusinessRuleException("The new owner must be an active member");
+		}
+		Member owner = load(tenant.organizationId(), tenant.memberId());
+		owner.stepDownAsOwner();
+		members.flush();
+		target.becomeOwner();
+		return findMembers(tenant.organizationId());
+	}
+
+	@Override
+	public List<InvitationView> findInvitations(UUID organizationId) {
+		Instant now = Instant.now();
+		return invitations.findByOrganizationIdOrderBySentAtDesc(organizationId).stream().map(i -> toView(i, now)).toList();
+	}
+
+	@Override
+	@Transactional
+	public InvitationView invite(Tenant tenant, InviteCommand command) {
 		String email = command.email().strip().toLowerCase(Locale.ROOT);
-		if (members.existsByEmailIgnoreCase(email)) {
-			throw new BusinessRuleException("'%s' is already a member".formatted(email));
+		if (members.findByOrganizationIdAndEmail(tenant.organizationId(), email).filter(Member::isActive).isPresent()) {
+			throw new ApiProblemException(HttpStatus.CONFLICT, "already-member", "'%s' is already a member".formatted(email));
 		}
-		if (invitations.existsByEmailIgnoreCase(email)) {
-			throw new BusinessRuleException("'%s' already has a pending invitation".formatted(email));
+		Optional<Invitation> previous = invitations.findByOrganizationIdAndEmail(tenant.organizationId(), email);
+		if (previous.isPresent() && !previous.get().isExpired(Instant.now())) {
+			throw new ApiProblemException(HttpStatus.CONFLICT, "already-invited",
+					"'%s' already has a pending invitation".formatted(email));
 		}
-		// Delivery of the invitation e-mail belongs to the notification integration (not implemented yet).
-		return toView(invitations.save(new Invitation(email, command.role())));
+		previous.ifPresent(i -> {
+			invitations.delete(i);
+			invitations.flush();
+		});
+		// Invitations are not e-mailed yet: the invitee sees them after signing in with this address.
+		Invitation invitation = new Invitation(tenant.organizationId(), email, command.role(), inviterName(tenant));
+		return toView(invitations.save(invitation), Instant.now());
 	}
 
 	@Override
 	@Transactional
-	public InvitationView resend(UUID invitationId) {
-		Invitation invitation = loadInvitation(invitationId);
+	public InvitationView resend(UUID organizationId, UUID invitationId) {
+		Invitation invitation = loadInvitation(organizationId, invitationId);
 		invitation.resend();
-		return toView(invitation);
+		return toView(invitation, Instant.now());
 	}
 
 	@Override
 	@Transactional
-	public void revokeInvitation(UUID invitationId) {
-		invitations.delete(loadInvitation(invitationId));
+	public void revokeInvitation(UUID organizationId, UUID invitationId) {
+		invitations.delete(loadInvitation(organizationId, invitationId));
 	}
 
 	@Override
@@ -81,15 +120,34 @@ class TeamServiceImpl implements TeamService {
 			.toList();
 	}
 
-	private Invitation loadInvitation(UUID id) {
-		return invitations.findById(id).orElseThrow(() -> new ResourceNotFoundException("Invitation", id));
+	private String inviterName(Tenant tenant) {
+		return tenant.memberId() == null ? tenant.actor()
+				: members.findById(tenant.memberId()).map(Member::getName).orElse(tenant.actor());
+	}
+
+	private Member loadOther(Tenant tenant, UUID memberId, String forbiddenOnSelf) {
+		if (memberId.equals(tenant.memberId())) {
+			throw new ApiProblemException(HttpStatus.CONFLICT, "self-change", "You cannot " + forbiddenOnSelf);
+		}
+		return load(tenant.organizationId(), memberId);
+	}
+
+	private Member load(UUID organizationId, UUID memberId) {
+		return members.findByIdAndOrganizationId(memberId, organizationId)
+			.orElseThrow(() -> new ResourceNotFoundException("Member", memberId));
+	}
+
+	private Invitation loadInvitation(UUID organizationId, UUID id) {
+		return invitations.findByIdAndOrganizationId(id, organizationId)
+			.orElseThrow(() -> new ResourceNotFoundException("Invitation", id));
 	}
 
 	private static MemberView toView(Member m) {
 		return new MemberView(m.getId(), m.getName(), m.getEmail(), m.getRole(), m.isActive(), m.getLastActiveAt());
 	}
 
-	private static InvitationView toView(Invitation i) {
-		return new InvitationView(i.getId(), i.getEmail(), i.getRole(), i.getSentAt());
+	private static InvitationView toView(Invitation i, Instant now) {
+		return new InvitationView(i.getId(), i.getEmail(), i.getRole(), i.getInvitedBy(), i.getSentAt(), i.getExpiresAt(),
+				i.isExpired(now));
 	}
 }

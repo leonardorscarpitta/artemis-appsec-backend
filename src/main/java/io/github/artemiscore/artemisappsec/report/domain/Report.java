@@ -32,6 +32,9 @@ public class Report {
 	private ReportType type;
 
 	/** {@code null} when the report covers the whole organization. */
+	@Column(name = "organization_id", nullable = false)
+	private UUID organizationId;
+
 	@Column(name = "project_id")
 	private UUID projectId;
 
@@ -59,10 +62,11 @@ public class Report {
 	}
 
 	/** A report requested by a user; content is filled in by the generator once it is ready. */
-	public static Report requested(Map<String, String> title, ReportType type, UUID projectId, LocalDate periodStart,
-			LocalDate periodEnd) {
+	public static Report requested(UUID organizationId, Map<String, String> title, ReportType type, UUID projectId,
+			LocalDate periodStart, LocalDate periodEnd) {
 		Report report = new Report();
 		report.id = UUID.randomUUID();
+		report.organizationId = organizationId;
 		report.title = Map.copyOf(title);
 		report.type = type;
 		report.projectId = projectId;

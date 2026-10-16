@@ -1,5 +1,6 @@
 package io.github.artemiscore.artemisappsec.project.service;
 
+import java.util.Collection;
 import java.util.Map;
 import java.util.UUID;
 
@@ -9,5 +10,5 @@ import java.util.UUID;
  */
 public interface ProjectFindingStats {
 
-	Map<UUID, Long> openFindingsByProject();
+	Map<UUID, Long> openFindingsByProject(Collection<UUID> projectIds);
 }

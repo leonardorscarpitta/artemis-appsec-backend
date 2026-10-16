@@ -35,14 +35,14 @@ class ApiTokenServiceImpl implements ApiTokenService {
 	}
 
 	@Override
-	public List<ApiTokenView> findAll() {
+	public List<ApiTokenView> findAll(UUID organizationId) {
 		Instant now = Instant.now();
-		return tokens.findAllByOrderByCreatedAtAsc().stream().map(t -> toView(t, now)).toList();
+		return tokens.findByOrganizationIdOrderByCreatedAtAsc(organizationId).stream().map(t -> toView(t, now)).toList();
 	}
 
 	@Override
 	@Transactional
-	public CreatedApiToken create(CreateApiTokenCommand command) {
+	public CreatedApiToken create(UUID organizationId, CreateApiTokenCommand command) {
 		if (!ALLOWED_LIFETIMES.contains(command.expiresInDays())) {
 			throw new IllegalArgumentException("Tokens can expire in 30, 90 or 365 days");
 		}
@@ -50,18 +50,16 @@ class ApiTokenServiceImpl implements ApiTokenService {
 		random.nextBytes(bytes);
 		String secret = PREFIX + Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
 		Instant expiresAt = Instant.now().plus(Duration.ofDays(command.expiresInDays()));
-		ApiToken token = tokens.save(new ApiToken(command.name().strip(), command.scopes(), sha256Hex(secret),
+		ApiToken token = tokens.save(new ApiToken(organizationId, command.name().strip(), command.scopes(), sha256Hex(secret),
 				secret.substring(secret.length() - 4), expiresAt));
 		return new CreatedApiToken(toView(token, Instant.now()), secret);
 	}
 
 	@Override
 	@Transactional
-	public void revoke(UUID id) {
-		if (!tokens.existsById(id)) {
-			throw new ResourceNotFoundException("API token", id);
-		}
-		tokens.deleteById(id);
+	public void revoke(UUID organizationId, UUID id) {
+		tokens.delete(tokens.findByIdAndOrganizationId(id, organizationId)
+			.orElseThrow(() -> new ResourceNotFoundException("API token", id)));
 	}
 
 	static String sha256Hex(String value) {

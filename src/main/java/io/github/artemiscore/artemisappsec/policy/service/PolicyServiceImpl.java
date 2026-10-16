@@ -56,23 +56,23 @@ class PolicyServiceImpl implements PolicyService {
 	}
 
 	@Override
-	public Policies get() {
-		List<StageGateView> stageViews = gates.findAll().stream()
+	public Policies get(UUID organizationId) {
+		List<StageGateView> stageViews = gates.findByOrganizationId(organizationId).stream()
 			.sorted(Comparator.comparing(StageGate::getStage))
 			.map(g -> new StageGateView(g.getStage(), g.getFailOn(), g.isRequired()))
 			.toList();
-		List<SlaView> slaViews = slas.findAll().stream()
+		List<SlaView> slaViews = slas.findByOrganizationId(organizationId).stream()
 			.sorted(Comparator.comparing(RemediationSla::getSeverity))
 			.map(s -> new SlaView(s.getSeverity(), s.getDays()))
 			.toList();
-		List<LicenseRule> rules = licenses.findAllByOrderByLicenseIdAsc();
+		List<LicenseRule> rules = licenses.findByOrganizationIdOrderByLicenseIdAsc(organizationId);
 		return new Policies(stageViews, slaViews, licenseIds(rules, LicenseDecision.ALLOWED),
 				licenseIds(rules, LicenseDecision.DENIED));
 	}
 
 	@Override
 	@Transactional
-	public Policies update(Policies policies) {
+	public Policies update(UUID organizationId, Policies policies) {
 		requireEveryOnce(policies.stages().stream().map(StageGateView::stage), Stage.class, "stage");
 		requireEveryOnce(policies.slaDays().stream().map(SlaView::severity), Severity.class, "severity");
 		Set<String> allowed = new HashSet<>(policies.licensesAllowed());
@@ -82,67 +82,71 @@ class PolicyServiceImpl implements PolicyService {
 			throw new IllegalArgumentException("Licenses cannot be both allowed and denied: " + both);
 		}
 
-		Map<Stage, StageGate> currentGates = gates.findAll().stream()
+		Map<Stage, StageGate> currentGates = gates.findByOrganizationId(organizationId).stream()
 			.collect(Collectors.toMap(StageGate::getStage, Function.identity()));
 		policies.stages().forEach(view -> currentGates
-			.computeIfAbsent(view.stage(), stage -> gates.save(new StageGate(stage, view.failOn(), view.required())))
+			.computeIfAbsent(view.stage(), stage -> gates.save(new StageGate(organizationId, stage, view.failOn(), view.required())))
 			.update(view.failOn(), view.required()));
 
-		Map<Severity, RemediationSla> currentSlas = slas.findAll().stream()
+		Map<Severity, RemediationSla> currentSlas = slas.findByOrganizationId(organizationId).stream()
 			.collect(Collectors.toMap(RemediationSla::getSeverity, Function.identity()));
 		policies.slaDays().forEach(view -> currentSlas
-			.computeIfAbsent(view.severity(), severity -> slas.save(new RemediationSla(severity, view.days())))
+			.computeIfAbsent(view.severity(), severity -> slas.save(new RemediationSla(organizationId, severity, view.days())))
 			.setDays(view.days()));
 
-		licenses.deleteAllInBatch();
+		licenses.deleteByOrganization(organizationId);
 		licenses.saveAll(Stream.concat(
-				allowed.stream().map(id -> new LicenseRule(id, LicenseDecision.ALLOWED)),
-				denied.stream().map(id -> new LicenseRule(id, LicenseDecision.DENIED))).toList());
-		return get();
+				allowed.stream().map(id -> new LicenseRule(organizationId, id, LicenseDecision.ALLOWED)),
+				denied.stream().map(id -> new LicenseRule(organizationId, id, LicenseDecision.DENIED))).toList());
+		return get(organizationId);
 	}
 
 	@Override
-	public List<RiskAcceptanceView> findRiskAcceptances() {
-		Map<UUID, String> names = projectNames();
-		return acceptances.findAllByOrderByExpiresAtAsc().stream().map(a -> toView(a, names)).toList();
+	public List<RiskAcceptanceView> findRiskAcceptances(UUID organizationId) {
+		Map<UUID, String> names = projectNames(organizationId);
+		if (names.isEmpty()) {
+			return List.of();
+		}
+		return acceptances.findByProjectIdInOrderByExpiresAtAsc(names.keySet()).stream().map(a -> toView(a, names)).toList();
 	}
 
 	@Override
 	@Transactional
-	public RiskAcceptanceView acceptRisk(AcceptRiskCommand command, String approvedBy) {
+	public RiskAcceptanceView acceptRisk(UUID organizationId, AcceptRiskCommand command, String approvedBy) {
 		LocalDate today = LocalDate.now(clock);
 		if (command.expiresAt().isAfter(today.plusYears(MAX_ACCEPTANCE_YEARS))) {
 			throw new IllegalArgumentException("A risk can be accepted for at most %d year".formatted(MAX_ACCEPTANCE_YEARS));
 		}
-		UUID projectId = projectId(command.repository());
+		UUID projectId = projectId(organizationId, command.repository());
 		if (acceptances.existsByCveAndProjectId(command.cve(), projectId)) {
 			throw new BusinessRuleException("%s is already accepted for %s".formatted(command.cve(), command.repository()));
 		}
 		RiskAcceptance saved = acceptances.save(new RiskAcceptance(command.cve(), projectId, command.justification().strip(),
 				approvedBy, command.expiresAt()));
-		return toView(saved, projectNames());
+		return toView(saved, projectNames(organizationId));
 	}
 
 	@Override
 	@Transactional
-	public void revokeRiskAcceptance(UUID id) {
-		if (!acceptances.existsById(id)) {
-			throw new ResourceNotFoundException("Risk acceptance", id);
-		}
-		acceptances.deleteById(id);
+	public void revokeRiskAcceptance(UUID organizationId, UUID id) {
+		Map<UUID, String> names = projectNames(organizationId);
+		RiskAcceptance acceptance = acceptances.findById(id)
+			.filter(a -> names.containsKey(a.getProjectId()))
+			.orElseThrow(() -> new ResourceNotFoundException("Risk acceptance", id));
+		acceptances.delete(acceptance);
 	}
 
-	private UUID projectId(String name) {
+	private UUID projectId(UUID organizationId, String name) {
 		try {
-			return projects.getByName(name).project().id();
+			return projects.getByName(organizationId, name).project().id();
 		}
 		catch (ResourceNotFoundException ex) {
 			throw new IllegalArgumentException("Unknown repository '%s'".formatted(name));
 		}
 	}
 
-	private Map<UUID, String> projectNames() {
-		return projects.findAll().stream().collect(Collectors.toMap(ProjectSummary::id, ProjectSummary::name));
+	private Map<UUID, String> projectNames(UUID organizationId) {
+		return projects.findAll(organizationId).stream().collect(Collectors.toMap(ProjectSummary::id, ProjectSummary::name));
 	}
 
 	private static <E extends Enum<E>> void requireEveryOnce(Stream<E> values, Class<E> type, String label) {

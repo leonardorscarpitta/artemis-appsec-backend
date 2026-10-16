@@ -1,6 +1,9 @@
 package io.github.artemiscore.artemisappsec.organization.domain;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.IntStream;
 
 import io.github.artemiscore.artemisappsec.shared.error.BusinessRuleException;
 import jakarta.persistence.Column;
@@ -10,13 +13,37 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
-/** A third-party system Artemis can connect to. The catalog is fixed; only its state changes. */
+/** A third-party system an organization can connect to. The catalog is fixed; only its state changes. */
 @Entity
 @Table(name = "integration")
 public class Integration {
 
+	private record Entry(String code, String name, String shortCode, IntegrationCategory category, boolean removable) {
+	}
+
+	private static final List<Entry> CATALOG = List.of(
+			new Entry("github", "GitHub", "GH", IntegrationCategory.SCM, true),
+			new Entry("gitlab", "GitLab", "GL", IntegrationCategory.SCM, true),
+			new Entry("bitbucket", "Bitbucket", "BB", IntegrationCategory.SCM, true),
+			new Entry("githubActions", "GitHub Actions", "GA", IntegrationCategory.CI, true),
+			new Entry("gitlabCi", "GitLab CI", "GC", IntegrationCategory.CI, true),
+			new Entry("jenkins", "Jenkins", "JK", IntegrationCategory.CI, true),
+			new Entry("slack", "Slack", "SL", IntegrationCategory.NOTIFICATIONS, true),
+			new Entry("teams", "Microsoft Teams", "MT", IntegrationCategory.NOTIFICATIONS, true),
+			new Entry("email", "E-mail", "@", IntegrationCategory.NOTIFICATIONS, true),
+			new Entry("webhook", "Webhook", "WH", IntegrationCategory.NOTIFICATIONS, true),
+			new Entry("jira", "Jira", "JI", IntegrationCategory.ISSUES, true),
+			new Entry("githubIssues", "GitHub Issues", "GI", IntegrationCategory.ISSUES, true),
+			new Entry("nvd", "NIST NVD", "NVD", IntegrationCategory.VULNERABILITY_DATA, false));
+
 	@Id
-	private String id;
+	private UUID id;
+
+	@Column(name = "organization_id", nullable = false)
+	private UUID organizationId;
+
+	@Column(nullable = false)
+	private String code;
 
 	@Column(nullable = false)
 	private String name;
@@ -49,6 +76,26 @@ public class Integration {
 	protected Integration() {
 	}
 
+	/** The catalog for a new organization; NIST NVD is always connected. */
+	public static List<Integration> catalogFor(UUID organizationId) {
+		Instant now = Instant.now();
+		return IntStream.range(0, CATALOG.size()).mapToObj(i -> {
+			Entry e = CATALOG.get(i);
+			Integration integration = new Integration();
+			integration.id = UUID.randomUUID();
+			integration.organizationId = organizationId;
+			integration.code = e.code();
+			integration.name = e.name();
+			integration.shortCode = e.shortCode();
+			integration.category = e.category();
+			integration.removable = e.removable();
+			integration.status = e.removable() ? IntegrationStatus.DISCONNECTED : IntegrationStatus.CONNECTED;
+			integration.position = i + 1;
+			integration.updatedAt = now;
+			return integration;
+		}).toList();
+	}
+
 	public void connect() {
 		status = IntegrationStatus.CONNECTED;
 		touch();
@@ -75,8 +122,8 @@ public class Integration {
 		updatedAt = Instant.now();
 	}
 
-	public String getId() {
-		return id;
+	public String getCode() {
+		return code;
 	}
 
 	public String getName() {

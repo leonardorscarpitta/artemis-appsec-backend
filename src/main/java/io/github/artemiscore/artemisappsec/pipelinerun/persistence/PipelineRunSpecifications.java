@@ -1,5 +1,6 @@
 package io.github.artemiscore.artemisappsec.pipelinerun.persistence;
 
+import java.util.Collection;
 import java.util.UUID;
 
 import org.springframework.data.jpa.domain.Specification;
@@ -14,6 +15,10 @@ public final class PipelineRunSpecifications {
 
 	public static Specification<PipelineRun> hasProject(UUID projectId) {
 		return (root, query, cb) -> projectId == null ? null : cb.equal(root.get("projectId"), projectId);
+	}
+
+	public static Specification<PipelineRun> inProjects(Collection<UUID> projectIds) {
+		return (root, query, cb) -> root.get("projectId").in(projectIds);
 	}
 
 	public static Specification<PipelineRun> hasStatus(RunStatus status) {
