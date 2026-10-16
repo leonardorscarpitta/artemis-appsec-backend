@@ -12,7 +12,9 @@ ECOSYSTEMS = {
 }
 COMMON = ["--format", "json", "--quiet", "--skip-version-check", "--timeout", "10m"]
 # Single-threaded filesystem scans keep memory within the runner limit (`trivy config` has no such flag).
-FS_ONLY = ["--parallel", "1"]
+# --offline-scan: never query package registries (e.g. Maven Central for parent POMs) — they rate-limit (429)
+# and would learn the repository's dependencies. The vulnerability database is still updated.
+FS_ONLY = ["--parallel", "1", "--offline-scan"]
 
 
 def _cvss(vuln: dict) -> tuple[float | None, str | None]:
