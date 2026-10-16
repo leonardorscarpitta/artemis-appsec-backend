@@ -228,7 +228,7 @@ class PipelineRunServiceImpl implements PipelineRunService {
 	/** Scans need a working deploy key: refusing early keeps the run (and the monthly quota) for when access works. */
 	private static void requireVerifiedAccess(ProjectSummary project) {
 		if (project.accessStatus() != AccessStatus.VERIFIED) {
-			throw new BusinessRuleException("Set up access first: add the deploy key from the repository's Access tab and select 'Test access'");
+			throw new BusinessRuleException("Set up access first: add the deploy key from the repository's Deploy Key tab and select 'Test access'");
 		}
 	}
 
