@@ -23,6 +23,10 @@ def process(job: dict, api: ApiClient, config: Config) -> None:
     work.mkdir(parents=True)
     try:
         src = work / "src"
+        if repo.get("access") != "ssh":
+            # Only repositories reached through their own deploy key are scanned (the key proves access was granted).
+            api.fail(run_id, "Only SSH repositories with an Artemis deploy key are scanned.")
+            return
         ssh = None
         try:
             if repo.get("access") == "ssh":

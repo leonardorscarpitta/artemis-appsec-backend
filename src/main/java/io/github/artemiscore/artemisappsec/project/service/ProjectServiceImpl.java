@@ -72,21 +72,19 @@ class ProjectServiceImpl implements ProjectService {
 		if (projects.existsByOrganizationIdAndName(organizationId, name)) {
 			throw new BusinessRuleException("A repository named '%s' is already connected".formatted(name));
 		}
-		boolean privateRepository = Project.isPrivateUrl(command.url());
-		if (privateRepository && GitHost.of(command.url()).isEmpty()) {
+		// Every repository is cloned over SSH with its own deploy key, which also proves the user controls it.
+		if (!Project.isPrivateUrl(command.url()) || GitHost.of(command.url()).isEmpty()) {
 			throw new IllegalArgumentException("Use an SSH URL such as git@github.com:owner/repo.git or ssh://git@host/owner/repo.git");
 		}
-		if (privateRepository && !keys.enabled()) {
+		if (!keys.enabled()) {
 			throw deployKeysDisabled();
 		}
 		Project project = new Project(organizationId, name, command.url(), command.branch(), command.stack());
 		applySettings(project, command.settings());
 		applyPipeline(project, command.pipeline());
 		Project saved = projects.save(project);
-		if (privateRepository) {
-			keys.generate(saved.getId(), saved.getName());
-		}
-		events.publishEvent(new ProjectCreated(saved.getId(), organizationId, saved.getName(), actor, privateRepository));
+		keys.generate(saved.getId(), saved.getName());
+		events.publishEvent(new ProjectCreated(saved.getId(), organizationId, saved.getName(), actor, true));
 		return toDetails(saved);
 	}
 
