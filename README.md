@@ -67,7 +67,7 @@ API ──http──> keycloak:8080/realms/artemisappsec/protocol/openid-connect
 ```
 
 - **TLS:** Caddy terminates HTTPS with its local CA at `https://auth.artemisappsec.localhost:9443` (`*.localhost` resolves to your machine). Trust Caddy's root CA once (`docker compose cp auth-proxy:/data/caddy/pki/authorities/local/root.crt .`) or accept the warning. Keycloak runs with `--proxy-headers=xforwarded` and a fixed public `--hostname`.
-- **Realm:** self-registration with e-mail verification, Terms of Use / Privacy Policy acceptance on first sign-in (required action with links to the app), password policy (12–128 chars, not username/e-mail, history 3), brute-force protection, en/pt-BR, reset password, account deletion, Organizations enabled. Dev e-mails go to **Mailpit** (http://localhost:8025); set `KC_SMTP_*` for a real server.
+- **Realm:** self-registration (e-mail verification **off**: no outgoing mailbox yet; e-mails stay unique per account), Terms of Use / Privacy Policy acceptance on first sign-in (required action with links to the app), password policy (12–128 chars, not username/e-mail, history 3), brute-force protection, en/pt-BR, reset password, account deletion, Organizations enabled. Dev e-mails go to **Mailpit** (http://localhost:8025); set `KC_SMTP_*` for a real server.
 - **Client:** `artemisappsec-web`, public, Authorization Code + PKCE (S256), redirect `ARTEMISAPPSEC_WEB_ORIGIN/auth/callback`, post-logout redirect to the app, audience mapper adding `artemisappsec-api` to access tokens. `prompt=create` opens the registration page.
 - **API validation:** issuer, expiry and audience (`artemisappsec-api`); principal = `preferred_username`. Tokens carry no roles: authorization is per organization (below).
 - **Database:** Keycloak uses its own database/role (`keycloak`) in the same PostgreSQL instance, created idempotently by the `keycloak-db-init` job (`KEYCLOAK_DB_PASSWORD`).
@@ -79,7 +79,7 @@ API ──http──> keycloak:8080/realms/artemisappsec/protocol/openid-connect
 Artemis is multi-tenant: every repository, finding, run, report, policy, integration, key, token, member, invitation, setting and subscription belongs to an **organization**. Tenancy and roles live in Artemis (not in Keycloak).
 
 - **Tenant header:** every organization-scoped request carries `X-Artemis-Organization: <slug>` (the frontend sends the slug of its `/<slug>/…` URL). Missing header → `400` `organization-required`; unknown slug, not a member or inactive member → `404` `organization-not-found` (existence is not revealed); missing permission → `403` `forbidden` with `permission`. Endpoints without the header: `/me`, `/me/**`, `POST /organizations`, `/roles`, `/pipeline/stages`, `/billing/plans`.
-- **Membership:** a member is linked to the Keycloak account by `sub`. Members created before the account existed (invitations, seeds) are linked on first use when the token's **verified** e-mail matches.
+- **Membership:** a member is linked to the Keycloak account by `sub`. Members created before the account existed (invitations, seeds) are linked on first use when the token's e-mail matches.
 - **Roles → permissions** (`organization/domain/Role.java`):
 
   | Role | viewFindings | triage | pipelines | integrations | team | billing |
@@ -92,8 +92,8 @@ Artemis is multi-tenant: every repository, finding, run, report, policy, integra
 
   `viewFindings`: every `GET`. `triage`: finding status, risk acceptances, reports. `pipelines`: create/configure repositories and pipelines, run/re-run/cancel scans, edit policies. `integrations`: integrations, deploy keys, API tokens. `team`: invitations, roles, removing members, organization settings. `billing` (owner): plan changes, ownership transfer, deleting the organization.
 - **Enforcement:** `organization/api/TenantInterceptor` resolves the tenant for every `/api/v1/**` handler (unless annotated `@WithoutOrganization`) and checks `@RequiresPermission`; `GET` defaults to `viewFindings` and any other method **without** the annotation is refused (fail closed). Controllers receive a `Tenant` parameter and pass `tenant.organizationId()` to services; every query is filtered by organization (directly or through its repositories), so ids/numbers from another organization return `404`.
-- **Rules:** one owner per organization; ownership is transferred (`POST /members/transfer-ownership`, the old owner becomes admin), never assigned; nobody changes their own role or removes themselves (they leave); the owner cannot leave. A user may own at most 5 organizations; creating one requires a verified e-mail.
-- **Account endpoints:** `GET /me/organizations` (`[{slug, name, role, permissions, plan}]`), `POST /organizations` (`{name, slug, defaultLanguage?}` → the creator becomes owner; FREE plan, default settings, integration catalogue and policies are provisioned), `GET /me/invitations` (pending, non-expired invitations for the verified e-mail), `POST /me/invitations/{id}/accept|decline`, `POST /me/organizations/{slug}/leave`.
+- **Rules:** one owner per organization; ownership is transferred (`POST /members/transfer-ownership`, the old owner becomes admin), never assigned; nobody changes their own role or removes themselves (they leave); the owner cannot leave. A user may own at most 5 organizations;.
+- **Account endpoints:** `GET /me/organizations` (`[{slug, name, role, permissions, plan}]`), `POST /organizations` (`{name, slug, defaultLanguage?}` → the creator becomes owner; FREE plan, default settings, integration catalogue and policies are provisioned), `GET /me/invitations` (pending, non-expired invitations for the account's e-mail), `POST /me/invitations/{id}/accept|decline`, `POST /me/organizations/{slug}/leave`.
 - **Slugs:** `^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$`, unique (`409 slug-taken`), not an app route (`409 slug-reserved`: `organizations`, `auth`, `login`, `help`, `privacy`, `terms`, `api`, …). Renaming the slug in the settings changes the organization's URLs.
 - **Invitations** expire after 7 days (resend renews them). They are **not e-mailed** yet: the invitee sees them after signing in or registering with that address.
 - Deleting an organization (`DELETE /organization`, owner) removes everything in it (database `ON DELETE CASCADE`).
@@ -111,7 +111,7 @@ All environment-specific values come from environment variables (secrets in prod
 | `AUTH_ENABLED` | `dev` profile only: `false` disables authentication |
 | `AUTH_PUBLIC_URL`, `ARTEMISAPPSEC_WEB_ORIGIN` | Keycloak public URL (`--hostname`) and the frontend origin (redirect/CORS in the realm) |
 | `KEYCLOAK_ADMIN_USERNAME`, `KEYCLOAK_ADMIN_PASSWORD`, `KEYCLOAK_DB_PASSWORD` | Keycloak bootstrap admin and database credentials |
-| `KC_SMTP_HOST`, `KC_SMTP_PORT`, `KC_SMTP_FROM` | Outgoing e-mail for verification/reset (Mailpit by default) |
+| `KC_SMTP_HOST`, `KC_SMTP_PORT`, `KC_SMTP_FROM` | Outgoing e-mail for password reset (Mailpit by default) |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated origins allowed to call `/api/**` |
 | `SCANNER_TOKEN` | Shared secret of the scanner runner (≥ 32 random characters; the internal job API is disabled otherwise). Also `SCANNER_STAGE_TIMEOUT_SECONDS` (600), `SCANNER_MAX_REPO_SIZE_MB` (500), `SCANNER_STALE_RUN_MINUTES` (60) |
 | `BILLING_ENABLED` | Allows plan changes (default `false`). Paid plans still require a payment platform, which is not integrated yet |

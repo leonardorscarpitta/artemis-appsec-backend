@@ -9,9 +9,13 @@ public record Identity(String subject, String username, String name, String emai
 		email = email == null ? null : email.strip().toLowerCase(Locale.ROOT);
 	}
 
-	/** The e-mail, only when the identity provider verified it (memberships and invitations match on it). */
-	public String verifiedEmail() {
-		return emailVerified ? email : null;
+	/**
+	 * The e-mail memberships and invitations match on. E-mail verification is off in the realm, so this trusts the
+	 * address as registered (Keycloak keeps it unique per account); return it only when {@code emailVerified} to
+	 * require verification again.
+	 */
+	public String matchingEmail() {
+		return email;
 	}
 
 	public String displayName() {

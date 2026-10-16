@@ -78,7 +78,7 @@ class MembershipServiceImpl implements MembershipService {
 
 	@Override
 	public List<OrganizationMembership> organizationsOf(Identity identity) {
-		List<Member> found = members.findForAccount(identity.subject(), identity.verifiedEmail());
+		List<Member> found = members.findForAccount(identity.subject(), identity.matchingEmail());
 		Set<UUID> linked = found.stream()
 			.filter(m -> identity.subject().equals(m.getUserSubject()))
 			.map(Member::getOrganizationId)
@@ -107,10 +107,6 @@ class MembershipServiceImpl implements MembershipService {
 
 	@Override
 	public OrganizationMembership create(CreateOrganizationCommand command, Identity identity) {
-		if (!identity.emailVerified()) {
-			throw new ApiProblemException(HttpStatus.FORBIDDEN, "email-not-verified",
-					"Verify your e-mail address before creating an organization");
-		}
 		if (members.countByUserSubjectAndRole(identity.subject(), Role.OWNER) >= MAX_OWNED_ORGANIZATIONS) {
 			throw new ApiProblemException(HttpStatus.CONFLICT, "organization-limit",
 					"You can own at most %d organizations".formatted(MAX_OWNED_ORGANIZATIONS));
@@ -128,10 +124,10 @@ class MembershipServiceImpl implements MembershipService {
 	@Override
 	@Transactional(readOnly = true)
 	public List<PendingInvitationView> pendingInvitations(Identity identity) {
-		if (identity.verifiedEmail() == null) {
+		if (identity.matchingEmail() == null) {
 			return List.of();
 		}
-		List<Invitation> pending = invitations.findByEmailAndExpiresAtAfterOrderBySentAtDesc(identity.verifiedEmail(), Instant.now());
+		List<Invitation> pending = invitations.findByEmailAndExpiresAtAfterOrderBySentAtDesc(identity.matchingEmail(), Instant.now());
 		Map<UUID, Organization> byId = organizations.findAllById(pending.stream().map(Invitation::getOrganizationId).toList())
 			.stream()
 			.collect(Collectors.toMap(Organization::getId, Function.identity()));
@@ -184,10 +180,10 @@ class MembershipServiceImpl implements MembershipService {
 	/** By subject; members created before the account existed (invitations, seeds) are linked by verified e-mail. */
 	private Optional<Member> findMember(UUID organizationId, Identity identity) {
 		Optional<Member> bySubject = members.findByOrganizationIdAndUserSubject(organizationId, identity.subject());
-		if (bySubject.isPresent() || identity.verifiedEmail() == null) {
+		if (bySubject.isPresent() || identity.matchingEmail() == null) {
 			return bySubject;
 		}
-		Optional<Member> byEmail = members.findByOrganizationIdAndEmail(organizationId, identity.verifiedEmail())
+		Optional<Member> byEmail = members.findByOrganizationIdAndEmail(organizationId, identity.matchingEmail())
 			.filter(m -> m.getUserSubject() == null);
 		byEmail.ifPresent(m -> m.bind(identity.subject(), identity.name()));
 		return byEmail;
@@ -195,7 +191,7 @@ class MembershipServiceImpl implements MembershipService {
 
 	private Invitation invitationFor(UUID invitationId, Identity identity) {
 		return invitations.findById(invitationId)
-			.filter(i -> identity.verifiedEmail() != null && i.getEmail().equals(identity.verifiedEmail()))
+			.filter(i -> identity.matchingEmail() != null && i.getEmail().equals(identity.matchingEmail()))
 			.filter(i -> !i.isExpired(Instant.now()))
 			.orElseThrow(() -> new ApiProblemException(HttpStatus.NOT_FOUND, "invitation-not-found",
 					"Invitation '%s' not found".formatted(invitationId)));
