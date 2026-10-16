@@ -1,0 +1,93 @@
+{
+  "realm": "artemisappsec",
+  "displayName": "Artemis",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": false,
+  "verifyEmail": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "rememberMe": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "failureFactor": 5,
+  "waitIncrementSeconds": 60,
+  "maxFailureWaitSeconds": 900,
+  "maxDeltaTimeSeconds": 43200,
+  "passwordPolicy": "length(12) and maxLength(128) and notUsername and notEmail and passwordHistory(3)",
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
+  "organizationsEnabled": true,
+  "internationalizationEnabled": true,
+  "supportedLocales": ["en", "pt-BR"],
+  "defaultLocale": "en",
+  "smtpServer": {
+    "host": "${KC_SMTP_HOST}",
+    "port": "${KC_SMTP_PORT}",
+    "from": "${KC_SMTP_FROM}",
+    "fromDisplayName": "Artemis",
+    "auth": "false",
+    "ssl": "false",
+    "starttls": "false"
+  },
+  "requiredActions": [
+    { "alias": "TERMS_AND_CONDITIONS", "name": "Terms and Conditions", "providerId": "TERMS_AND_CONDITIONS", "enabled": true, "defaultAction": true, "priority": 10, "config": {} },
+    { "alias": "VERIFY_EMAIL", "name": "Verify Email", "providerId": "VERIFY_EMAIL", "enabled": true, "defaultAction": false, "priority": 20, "config": {} },
+    { "alias": "UPDATE_PASSWORD", "name": "Update Password", "providerId": "UPDATE_PASSWORD", "enabled": true, "defaultAction": false, "priority": 30, "config": {} },
+    { "alias": "UPDATE_PROFILE", "name": "Update Profile", "providerId": "UPDATE_PROFILE", "enabled": true, "defaultAction": false, "priority": 40, "config": {} },
+    { "alias": "CONFIGURE_TOTP", "name": "Configure OTP", "providerId": "CONFIGURE_TOTP", "enabled": true, "defaultAction": false, "priority": 50, "config": {} },
+    { "alias": "delete_account", "name": "Delete Account", "providerId": "delete_account", "enabled": true, "defaultAction": false, "priority": 60, "config": {} }
+  ],
+  "localizationTexts": {
+    "en": {
+      "termsTitle": "Terms of Use and Privacy Policy",
+      "termsText": "<p>To use Artemis you must accept the <a href=\"${ARTEMISAPPSEC_WEB_ORIGIN}/terms\" target=\"_blank\" rel=\"noopener\">Terms of Use</a> and the <a href=\"${ARTEMISAPPSEC_WEB_ORIGIN}/privacy\" target=\"_blank\" rel=\"noopener\">Privacy Policy</a>. Artemis never sells or shares information about you or your organization.</p>"
+    },
+    "pt-BR": {
+      "termsTitle": "Termos de Uso e Política de Privacidade",
+      "termsText": "<p>Para usar o Artemis você precisa aceitar os <a href=\"${ARTEMISAPPSEC_WEB_ORIGIN}/terms\" target=\"_blank\" rel=\"noopener\">Termos de Uso</a> e a <a href=\"${ARTEMISAPPSEC_WEB_ORIGIN}/privacy\" target=\"_blank\" rel=\"noopener\">Política de Privacidade</a>. O Artemis nunca vende nem compartilha informações sobre você ou sua organização.</p>"
+    }
+  },
+  "clients": [
+    {
+      "clientId": "artemisappsec-web",
+      "name": "Artemis",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": true,
+      "redirectUris": ["${ARTEMISAPPSEC_WEB_ORIGIN}/auth/callback"],
+      "webOrigins": ["${ARTEMISAPPSEC_WEB_ORIGIN}"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "${ARTEMISAPPSEC_WEB_ORIGIN}/*"
+      },
+      "defaultClientScopes": ["web-origins", "acr", "basic", "profile", "email", "roles"],
+      "optionalClientScopes": ["offline_access"],
+      "protocolMappers": [
+        {
+          "name": "audience artemisappsec-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "artemisappsec-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ]
+}

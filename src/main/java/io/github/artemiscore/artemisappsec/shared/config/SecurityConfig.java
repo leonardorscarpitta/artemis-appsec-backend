@@ -12,6 +12,10 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtClaimValidator;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
@@ -62,11 +66,10 @@ public class SecurityConfig {
 			NimbusJwtDecoder decoder = StringUtils.hasText(oidc.jwkSetUri())
 					? NimbusJwtDecoder.withJwkSetUri(oidc.jwkSetUri()).build()
 					: NimbusJwtDecoder.withIssuerLocation(oidc.issuerUri()).build();
-			// RFC 9068 access tokens: typ "at+jwt", issuer, audience, expiry and required claims.
-			decoder.setJwtValidator(JwtValidators.createAtJwtValidator()
-				.issuer(oidc.issuerUri())
-				.audience(oidc.audience())
-				.build());
+			OAuth2TokenValidator<Jwt> audience = new JwtClaimValidator<List<String>>("aud",
+					aud -> aud != null && aud.contains(oidc.audience()));
+			decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+					JwtValidators.createDefaultWithIssuer(oidc.issuerUri()), audience));
 			return decoder;
 		});
 	}

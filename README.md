@@ -35,7 +35,9 @@ docker compose up -d
 | API | http://localhost:8080/api/v1 |
 | OpenAPI / Swagger UI | http://localhost:8080/api/docs/ui |
 | Health | http://localhost:8080/actuator/health |
-| Authelia (sign-in, OIDC provider) | https://auth.artemisappsec.localhost:9443 |
+| Keycloak (sign-in, registration, account) | https://auth.artemisappsec.localhost:9443/realms/artemisappsec/account |
+| Keycloak admin console | https://auth.artemisappsec.localhost:9443/admin (`KEYCLOAK_ADMIN_*` in `.env`) |
+| Mailpit (dev e-mails) | http://localhost:8025 |
 | Remote debugger (JDWP) | `localhost:5005` |
 | PostgreSQL | `localhost:5432` |
 
@@ -45,21 +47,23 @@ The `dev` profile loads demo data (`src/main/resources/db/seed`). Set `AUTH_ENAB
 
 Production image: `docker build -t artemisappsec-api .` (multi-stage, non-root, layered jar).
 
-**Memory limits** (the stack is sized for a 16 GB machine, ~4.5 GB in total): `db` 512 MB, `api` 1.5 GB (Maven `-Xmx384m`, application JVM `-Xmx640m -XX:+UseSerialGC`), `authelia` 384 MB (argon2 password checks use ~64 MB each), `auth-proxy` 64 MB, `scanner` 2 GB (+ 2 CPUs, 512 processes).
+**Memory limits** (the stack is sized for a 16 GB machine, ~4.5 GB in total): `db` 512 MB, `api` 1.5 GB (Maven `-Xmx384m`, application JVM `-Xmx640m -XX:+UseSerialGC`), `keycloak` 768 MB, `mailpit` 64 MB, `auth-proxy` 64 MB, `scanner` 2 GB (+ 2 CPUs, 512 processes).
 
-## Authentication (Authelia)
+## Authentication (Keycloak)
 
-Authelia is the OpenID Connect provider; the API is an OAuth2 resource server.
+Keycloak 26.4 is the OpenID Connect provider (realm `artemisappsec`, imported from `keycloak/realm-artemisappsec.json` on first start); the API is an OAuth2 resource server.
 
 ```
-browser ──https──> Caddy :9443 (auth-proxy) ──> Authelia :9091
-API ──http──> auth-proxy:9080/jwks.json   (internal only, signing keys)
+browser ──https──> Caddy :9443 (auth-proxy) ──> Keycloak :8080
+API ──http──> keycloak:8080/realms/artemisappsec/protocol/openid-connect/certs   (internal, signing keys)
 ```
 
-- **Why Caddy:** Authelia refuses non-HTTPS public URLs. Caddy terminates TLS with its local CA. `*.localhost` resolves to your machine in browsers, so no hosts-file changes are needed. The first visit to https://auth.artemisappsec.localhost:9443 shows a certificate warning; accept it, or trust Caddy's root CA (`docker compose cp auth-proxy:/data/caddy/pki/authorities/local/root.crt .`).
-- **Client:** `artemisappsec-web` is a public client using Authorization Code + PKCE (S256). Access tokens are RFC 9068 JWTs (`typ: at+jwt`) with audience `artemisappsec-api` and the claims `preferred_username`, `name`, `email` and `groups`.
-- **API validation:** issuer, audience, expiry and token type are checked with `JwtValidators.createAtJwtValidator()`. The principal name is `preferred_username`, and `groups` become `ROLE_<GROUP>` authorities (not enforced yet).
-- **Secrets:** `authelia/generate-secrets.sh` creates them in `authelia/secrets/` (git-ignored): session and storage keys, the HMAC secret, the RSA signing key and `users.yml`. Development users (`ana.souza` owner, `carla.mendes` analyst, `daniel.rocha` developer) get random passwords, listed in `authelia/secrets/dev-credentials.txt`. In production these files come from the secret store.
+- **TLS:** Caddy terminates HTTPS with its local CA at `https://auth.artemisappsec.localhost:9443` (`*.localhost` resolves to your machine). Trust Caddy's root CA once (`docker compose cp auth-proxy:/data/caddy/pki/authorities/local/root.crt .`) or accept the warning. Keycloak runs with `--proxy-headers=xforwarded` and a fixed public `--hostname`.
+- **Realm:** self-registration with e-mail verification, Terms of Use / Privacy Policy acceptance on first sign-in (required action with links to the app), password policy (12–128 chars, not username/e-mail, history 3), brute-force protection, en/pt-BR, reset password, account deletion, Organizations enabled. Dev e-mails go to **Mailpit** (http://localhost:8025); set `KC_SMTP_*` for a real server.
+- **Client:** `artemisappsec-web`, public, Authorization Code + PKCE (S256), redirect `ARTEMISAPPSEC_WEB_ORIGIN/auth/callback`, post-logout redirect to the app, audience mapper adding `artemisappsec-api` to access tokens. `prompt=create` opens the registration page.
+- **API validation:** issuer, expiry and audience (`artemisappsec-api`); principal = `preferred_username`.
+- **Database:** Keycloak uses its own database/role (`keycloak`) in the same PostgreSQL instance, created idempotently by the `keycloak-db-init` job (`KEYCLOAK_DB_PASSWORD`).
+- **Dev users:** `./keycloak/create-dev-users.sh` creates `ana.souza`, `carla.mendes`, `daniel.rocha` (verified e-mail, random passwords) and writes `keycloak/secrets/dev-credentials.txt` (git-ignored).
 - `GET /api/v1/me` returns the signed-in user.
 
 ## Configuration
@@ -73,7 +77,9 @@ All environment-specific values come from environment variables (secrets in prod
 | `OIDC_JWK_SET_URI` | Optional URL of the signing keys (internal URL in Docker) |
 | `OIDC_AUDIENCE` | Required `aud` claim (default `artemisappsec-api`) |
 | `AUTH_ENABLED` | `dev` profile only: `false` disables authentication |
-| `AUTH_COOKIE_DOMAIN`, `AUTH_PUBLIC_URL`, `ARTEMISAPPSEC_WEB_ORIGIN`, `ARTEMISAPPSEC_WEB_REDIRECT_URI` | Authelia session domain, public URL, the frontend origin (CORS) and callback URL |
+| `AUTH_PUBLIC_URL`, `ARTEMISAPPSEC_WEB_ORIGIN` | Keycloak public URL (`--hostname`) and the frontend origin (redirect/CORS in the realm) |
+| `KEYCLOAK_ADMIN_USERNAME`, `KEYCLOAK_ADMIN_PASSWORD`, `KEYCLOAK_DB_PASSWORD` | Keycloak bootstrap admin and database credentials |
+| `KC_SMTP_HOST`, `KC_SMTP_PORT`, `KC_SMTP_FROM` | Outgoing e-mail for verification/reset (Mailpit by default) |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated origins allowed to call `/api/**` |
 | `SCANNER_TOKEN` | Shared secret of the scanner runner (≥ 32 random characters; the internal job API is disabled otherwise). Also `SCANNER_STAGE_TIMEOUT_SECONDS` (600), `SCANNER_MAX_REPO_SIZE_MB` (500), `SCANNER_STALE_RUN_MINUTES` (60) |
 | `BILLING_ENABLED` | Allows plan changes (default `false`). Paid plans still require a payment platform, which is not integrated yet |
@@ -143,7 +149,7 @@ Licensing (see `scanner/THIRD_PARTY_NOTICES.md`, shipped in the image with every
 **Security and privacy measures**
 
 - *Supply chain:* pinned tool versions; every download verified against a pinned SHA-256 (cross-checked with the official checksum files where published); multi-stage build, no build tools in the final image.
-- *Sandbox:* non-root user (uid 10001), read-only root filesystem, all Linux capabilities dropped, `no-new-privileges`, memory/CPU/process limits, no Docker socket, no database credentials. The `scanner` network is shared only with the API — the database and Authelia are unreachable.
+- *Sandbox:* non-root user (uid 10001), read-only root filesystem, all Linux capabilities dropped, `no-new-privileges`, memory/CPU/process limits, no Docker socket, no database credentials. The `scanner` network is shared only with the API — the database and Keycloak are unreachable.
 - *Clone:* public **HTTPS** repositories only for now (SSH/private repositories come later); credentials in URLs, non-default ports and hosts resolving to private, loopback, link-local or metadata addresses are refused; `--depth 1 --single-branch --no-tags`, no submodules, hooks, LFS, symlinks or redirects; size limit (500 MB) and timeouts. No repository code is ever executed (no installs, no builds).
 - *Privacy:* source code lives in an in-memory workspace that is deleted after each run (and on start-up). Secrets are redacted by Gitleaks and the worker never forwards secret values or code snippets — only rule, file and line. Logs are size-limited and redacted. Telemetry and update checks are disabled (`--metrics=off`, `*_CHECK_FOR_APP_UPDATE=false`); the only outbound traffic is the git clone and vulnerability-database downloads, which contain no user data.
 
