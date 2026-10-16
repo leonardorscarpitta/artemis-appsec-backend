@@ -77,6 +77,8 @@ Rules:
 | `finding` | Vulnerabilities (CVE per package and repository), status workflow and timeline; provides open counts to `project` via `ProjectFindingStats` | `/api/v1/findings` |
 | `pipelinerun` | Pipeline executions: list/filter, 7-day summary, run detail with stage logs, re-run and cancel | `/api/v1/pipeline-runs` |
 | `dashboard` | Read-only aggregation of findings and repositories | `/api/v1/dashboard/summary` |
+| `report` | Security summary and OWASP compliance reports; text localized by `Accept-Language` (en-US, pt-BR). Requested reports stay `generating` until a report generator exists | `/api/v1/reports` |
+| `policy` | Organization-wide stage gates (fail threshold, required), remediation SLAs, license allow/deny lists, risk acceptances | `/api/v1/policies`, `/api/v1/risk-acceptances` |
 
 Query parameters accept the same enum values as the JSON (`?status=falsePositive&severity=critical`), via `shared/config/WireEnumConverterFactory`.
 
