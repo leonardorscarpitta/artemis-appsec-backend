@@ -48,6 +48,7 @@ services:
 
   authelia:
     image: authelia/authelia:4.39
+    restart: unless-stopped
     environment:
       X_AUTHELIA_CONFIG: /config/configuration.yml
       X_AUTHELIA_CONFIG_FILTERS: template
@@ -59,7 +60,7 @@ services:
       - ./authelia/configuration.yml:/config/configuration.yml:ro
       - ./authelia/secrets:/secrets:ro
       - authelia_data:/data
-    mem_limit: 128m
+    mem_limit: 384m  # argon2 password checks need ~64 MB each
 
   auth-proxy:
     image: caddy:2-alpine

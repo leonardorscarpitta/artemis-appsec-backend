@@ -45,7 +45,7 @@ The `dev` profile loads demo data (`src/main/resources/db/seed`). Set `AUTH_ENAB
 
 Production image: `docker build -t artemisappsec-api .` (multi-stage, non-root, layered jar).
 
-**Memory limits** (the stack is sized for a 16 GB machine, ~4.3 GB in total): `db` 512 MB, `api` 1.5 GB (Maven `-Xmx384m`, application JVM `-Xmx640m -XX:+UseSerialGC`), `authelia` 128 MB, `auth-proxy` 64 MB, `scanner` 2 GB (+ 2 CPUs, 512 processes).
+**Memory limits** (the stack is sized for a 16 GB machine, ~4.5 GB in total): `db` 512 MB, `api` 1.5 GB (Maven `-Xmx384m`, application JVM `-Xmx640m -XX:+UseSerialGC`), `authelia` 384 MB (argon2 password checks use ~64 MB each), `auth-proxy` 64 MB, `scanner` 2 GB (+ 2 CPUs, 512 processes).
 
 ## Authentication (Authelia)
 
