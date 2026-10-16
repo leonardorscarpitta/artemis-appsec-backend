@@ -33,7 +33,7 @@ docker compose up -d
 | API | http://localhost:8080/api/v1 |
 | OpenAPI / Swagger UI | http://localhost:8080/api/docs/ui |
 | Health | http://localhost:8080/actuator/health |
-| Authelia (sign-in, OIDC provider) | https://auth.artemis.localhost:9443 |
+| Authelia (sign-in, OIDC provider) | https://auth.artemisappsec.localhost:9443 |
 | Remote debugger (JDWP) | `localhost:5005` |
 | PostgreSQL | `localhost:5432` |
 
@@ -41,7 +41,7 @@ The `api` container runs `mvn spring-boot:run` with the `dev` profile. Maven com
 
 The `dev` profile loads demo data (`src/main/resources/db/seed`). Set `AUTH_ENABLED=false` in `.env` to skip authentication entirely (local debugging only).
 
-Production image: `docker build -t artemis-api .` (multi-stage, non-root, layered jar).
+Production image: `docker build -t artemisappsec-api .` (multi-stage, non-root, layered jar).
 
 ## Authentication (Authelia)
 
@@ -52,8 +52,8 @@ browser ──https──> Caddy :9443 (auth-proxy) ──> Authelia :9091
 API ──http──> auth-proxy:9080/jwks.json   (internal only, signing keys)
 ```
 
-- **Why Caddy:** Authelia refuses non-HTTPS public URLs. Caddy terminates TLS with its local CA. `*.localhost` resolves to your machine in browsers, so no hosts-file changes are needed. The first visit to https://auth.artemis.localhost:9443 shows a certificate warning; accept it, or trust Caddy's root CA (`docker compose cp auth-proxy:/data/caddy/pki/authorities/local/root.crt .`).
-- **Client:** `artemis-web` is a public client using Authorization Code + PKCE (S256). Access tokens are RFC 9068 JWTs (`typ: at+jwt`) with audience `artemis-api` and the claims `preferred_username`, `name`, `email` and `groups`.
+- **Why Caddy:** Authelia refuses non-HTTPS public URLs. Caddy terminates TLS with its local CA. `*.localhost` resolves to your machine in browsers, so no hosts-file changes are needed. The first visit to https://auth.artemisappsec.localhost:9443 shows a certificate warning; accept it, or trust Caddy's root CA (`docker compose cp auth-proxy:/data/caddy/pki/authorities/local/root.crt .`).
+- **Client:** `artemisappsec-web` is a public client using Authorization Code + PKCE (S256). Access tokens are RFC 9068 JWTs (`typ: at+jwt`) with audience `artemisappsec-api` and the claims `preferred_username`, `name`, `email` and `groups`.
 - **API validation:** issuer, audience, expiry and token type are checked with `JwtValidators.createAtJwtValidator()`. The principal name is `preferred_username`, and `groups` become `ROLE_<GROUP>` authorities (not enforced yet).
 - **Secrets:** `authelia/generate-secrets.sh` creates them in `authelia/secrets/` (git-ignored): session and storage keys, the HMAC secret, the RSA signing key and `users.yml`. Development users (`ana.souza` owner, `carla.mendes` analyst, `daniel.rocha` developer) get random passwords, listed in `authelia/secrets/dev-credentials.txt`. In production these files come from the secret store.
 - `GET /api/v1/me` returns the signed-in user.
@@ -67,9 +67,9 @@ All environment-specific values come from environment variables (secrets in prod
 | `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | PostgreSQL connection |
 | `OIDC_ISSUER_URI` | Expected `iss` claim; also used for discovery when no JWKS URL is set |
 | `OIDC_JWK_SET_URI` | Optional URL of the signing keys (internal URL in Docker) |
-| `OIDC_AUDIENCE` | Required `aud` claim (default `artemis-api`) |
+| `OIDC_AUDIENCE` | Required `aud` claim (default `artemisappsec-api`) |
 | `AUTH_ENABLED` | `dev` profile only: `false` disables authentication |
-| `AUTH_COOKIE_DOMAIN`, `AUTH_PUBLIC_URL`, `ARTEMIS_WEB_ORIGIN`, `ARTEMIS_WEB_REDIRECT_URI` | Authelia session domain, public URL, the frontend origin (CORS) and callback URL |
+| `AUTH_COOKIE_DOMAIN`, `AUTH_PUBLIC_URL`, `ARTEMISAPPSEC_WEB_ORIGIN`, `ARTEMISAPPSEC_WEB_REDIRECT_URI` | Authelia session domain, public URL, the frontend origin (CORS) and callback URL |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated origins allowed to call `/api/**` |
 
 ## Architecture

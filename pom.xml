@@ -9,9 +9,9 @@
 		<relativePath/>
 	</parent>
 	<groupId>io.github.artemiscore</groupId>
-	<artifactId>artemis</artifactId>
+	<artifactId>artemisappsec</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name>artemis</name>
+	<name>artemisappsec</name>
 	<description>Artemis SAST platform API</description>
 	<licenses>
 		<license>

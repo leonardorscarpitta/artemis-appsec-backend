@@ -9,14 +9,14 @@ spring:
 
 logging:
   level:
-    io.github.artemiscore.artemis: DEBUG
+    io.github.artemiscore.artemisappsec: DEBUG
     org.springframework.web: DEBUG
 
-artemis:
+artemisappsec:
   security:
     auth-enabled: ${AUTH_ENABLED:true}
     oidc:
-      issuer-uri: ${OIDC_ISSUER_URI:https://auth.artemis.localhost:9443}
+      issuer-uri: ${OIDC_ISSUER_URI:https://auth.artemisappsec.localhost:9443}
       jwk-set-uri: ${OIDC_JWK_SET_URI:http://auth-proxy:9080/jwks.json}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}

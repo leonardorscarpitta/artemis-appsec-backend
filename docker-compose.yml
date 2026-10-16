@@ -42,10 +42,10 @@ services:
     environment:
       X_AUTHELIA_CONFIG: /config/configuration.yml
       X_AUTHELIA_CONFIG_FILTERS: template
-      ARTEMIS_AUTH_COOKIE_DOMAIN: ${AUTH_COOKIE_DOMAIN:-artemis.localhost}
-      ARTEMIS_AUTH_PUBLIC_URL: ${AUTH_PUBLIC_URL:-https://auth.artemis.localhost:9443}
-      ARTEMIS_WEB_ORIGIN: ${ARTEMIS_WEB_ORIGIN:-http://localhost:4200}
-      ARTEMIS_WEB_REDIRECT_URI: ${ARTEMIS_WEB_REDIRECT_URI:-http://localhost:4200/auth/callback}
+      ARTEMISAPPSEC_AUTH_COOKIE_DOMAIN: ${AUTH_COOKIE_DOMAIN:-artemisappsec.localhost}
+      ARTEMISAPPSEC_AUTH_PUBLIC_URL: ${AUTH_PUBLIC_URL:-https://auth.artemisappsec.localhost:9443}
+      ARTEMISAPPSEC_WEB_ORIGIN: ${ARTEMISAPPSEC_WEB_ORIGIN:-http://localhost:4200}
+      ARTEMISAPPSEC_WEB_REDIRECT_URI: ${ARTEMISAPPSEC_WEB_REDIRECT_URI:-http://localhost:4200/auth/callback}
     volumes:
       - ./authelia/configuration.yml:/config/configuration.yml:ro
       - ./authelia/secrets:/secrets:ro
