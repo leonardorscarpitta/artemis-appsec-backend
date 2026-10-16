@@ -220,6 +220,8 @@ Repository URLs may be `https://host/owner/repo(.git)` or SSH (`git@host:owner/r
 | `POST /internal/v1/jobs/{runId}/complete` | — | `204` |
 | `POST /internal/v1/jobs/{runId}/fail` | `{reason}` | `204` (e.g. the repository could not be cloned) |
 
+Stages run in pipeline order and **a failed stage stops the pipeline**: as soon as the API answers `failed` for a stage, the runner does not run the remaining stages and reports them as `skipped` ("Not run: the <stage> stage failed"), then completes the run (which ends `failed`). Warnings do not stop it.
+
 Finding payload:
 
 ```json
