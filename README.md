@@ -104,7 +104,7 @@ Rules:
 | `report` | Security summary and OWASP compliance reports; text localized by `Accept-Language` (en-US, pt-BR). Requested reports stay `generating` until a report generator exists | `/api/v1/reports` |
 | `policy` | Organization-wide stage gates (fail threshold, required), remediation SLAs, license allow/deny lists, risk acceptances | `/api/v1/policies`, `/api/v1/risk-acceptances` |
 | `account` | The signed-in user from the JWT | `/api/v1/me` |
-| `billing` | Plans (FREE, PRO R$ 24,99/month), the organization's subscription and feature entitlements (`BillingService.isEntitled`, e.g. AI triage on PRO). Disabled by default; no payment platform is integrated, so PRO cannot be purchased yet | `/api/v1/billing` |
+| `billing` | Plans (FREE: 90 scans/month; PRO: R$ 24,99/month, 300 scans/month and AI triage), the organization's subscription, monthly scan usage (`ScanUsage` port, implemented by `pipelinerun`) and entitlements. Re-runs are refused once the month's limit is reached. Plan changes are disabled by default and no payment platform is integrated | `/api/v1/billing`, `/api/v1/billing/plans` (public) |
 | `organization` | Integrations, SSH deploy keys, team (members, invitations, roles), organization settings, API tokens | `/api/v1/integrations`, `/api/v1/deploy-keys`, `/api/v1/members`, `/api/v1/invitations`, `/api/v1/roles`, `/api/v1/organization`, `/api/v1/api-tokens` |
 
 Query parameters accept the same enum values as the JSON (`?status=falsePositive&severity=critical`), via `shared/config/WireEnumConverterFactory`.

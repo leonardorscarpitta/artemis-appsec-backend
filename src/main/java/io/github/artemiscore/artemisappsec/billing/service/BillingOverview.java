@@ -11,5 +11,5 @@ import io.github.artemiscore.artemisappsec.billing.domain.Plan;
  * @param entitlements features available with the current plan
  */
 public record BillingOverview(boolean enabled, Plan currentPlan, Instant since, List<PlanView> plans,
-		List<Feature> entitlements) {
+		List<Feature> entitlements, UsageView usage) {
 }

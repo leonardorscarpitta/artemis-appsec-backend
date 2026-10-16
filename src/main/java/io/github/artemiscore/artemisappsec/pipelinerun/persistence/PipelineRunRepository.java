@@ -3,6 +3,7 @@ package io.github.artemiscore.artemisappsec.pipelinerun.persistence;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.time.Instant;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -13,6 +14,9 @@ import org.springframework.data.jpa.repository.Query;
 import io.github.artemiscore.artemisappsec.pipelinerun.domain.PipelineRun;
 
 public interface PipelineRunRepository extends JpaRepository<PipelineRun, UUID>, JpaSpecificationExecutor<PipelineRun> {
+
+	long countByStartedAtGreaterThanEqual(Instant since);
+
 
 	@EntityGraph(attributePaths = "stages")
 	Optional<PipelineRun> findByNumber(long number);
