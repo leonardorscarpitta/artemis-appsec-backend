@@ -34,7 +34,7 @@ docker compose up -d
 | Remote debugger (JDWP) | `localhost:5005` |
 | PostgreSQL | `localhost:5432` |
 
-The `api` container runs `mvn spring-boot:run` with the `dev` profile and DevTools, so code changes restart the app automatically. Dependencies are cached in `.m2/` (git-ignored).
+The `api` container runs `mvn spring-boot:run` with the `dev` profile. Maven compiles once at startup, so after changing code run `docker compose restart api` (DevTools also restarts the app when an IDE recompiles classes into `target/`). Dependencies are cached in `.m2/` (git-ignored).
 
 The `dev` profile loads demo data (`src/main/resources/db/seed`) and **disables authentication** (`AUTH_ENABLED=false`). Any other profile requires a valid JWT from the OpenID Connect issuer in `OIDC_ISSUER_URI` (Authelia).
 
