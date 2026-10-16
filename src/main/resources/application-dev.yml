@@ -1,4 +1,4 @@
-# Local development: demo data, verbose logs, local Authelia as identity provider.
+# Local development: demo data, verbose logs, local Keycloak as identity provider.
 spring:
   flyway:
     locations: classpath:db/migration,classpath:db/seed
