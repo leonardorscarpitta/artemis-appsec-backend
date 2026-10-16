@@ -33,7 +33,7 @@ class ScanJobServiceImpl implements ScanJobService {
 	private static final int MAX_MESSAGE_CHARS = 500;
 	private static final int MAX_REASON_CHARS = 500;
 	private static final int MAX_CLAIM_ATTEMPTS = 20;
-	private static final String NO_DEPLOY_KEY = "No deploy key: open the repository's Access tab to set one up";
+	private static final String NO_DEPLOY_KEY = "No deploy key: open the repository's Deploy Key tab to set one up";
 
 	private final PipelineRunService runs;
 	private final FindingService findings;
@@ -97,11 +97,11 @@ class ScanJobServiceImpl implements ScanJobService {
 		}
 		ProjectSummary project = found.get();
 		if (!"ssh".equals(project.access())) {
-			runs.fail(run.runId(), "Only SSH repositories with an Artemis deploy key are scanned: add the repository again with its SSH URL and set up its key in the Access tab");
+			runs.fail(run.runId(), "Only SSH repositories with an Artemis deploy key are scanned: add the repository again with its SSH URL and set up its key in the Deploy Key tab");
 			return Optional.empty();
 		}
 		if (!projects.hostKeyKnown(project.id())) {
-			runs.fail(run.runId(), "The Git server's host key is not known yet: run 'Test access' in the repository's Access tab first");
+			runs.fail(run.runId(), "The Git server's host key is not known yet: run 'Test access' in the repository's Deploy Key tab first");
 			return Optional.empty();
 		}
 		SshCredentials credentials = projects.sshCredentials(project.id(), "run #" + run.number()).orElse(null);

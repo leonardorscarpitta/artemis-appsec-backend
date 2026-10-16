@@ -102,7 +102,7 @@ def known_hosts_for(target: SshTarget, recorded: str | None) -> str:
         return "\n".join(line for line in PINNED_KNOWN_HOSTS.read_text().splitlines()
                          if line.split(" ", 1)[0] == target.host)
     if not recorded:
-        raise CloneRefused("The Git server's host key is not known yet: run 'Test access' in the repository's Access tab first")
+        raise CloneRefused("The Git server's host key is not known yet: run 'Test access' in the repository's Deploy Key tab first")
     return recorded
 
 
@@ -243,7 +243,7 @@ def clone(url: str, branch: str, destination: Path, timeout: int, max_size_mb: i
         shutil.rmtree(destination, ignore_errors=True)
         if ssh:
             raise CloneRefused(explain_ssh_error(result.stderr))
-        raise CloneRefused("The repository could not be cloned. Check that the branch exists. If the repository is private, add it with its SSH URL (git@host:owner/repo.git) and set up its deploy key in the Access tab")
+        raise CloneRefused("The repository could not be cloned. Check that the branch exists. If the repository is private, add it with its SSH URL (git@host:owner/repo.git) and set up its deploy key in the Deploy Key tab")
 
     log = subprocess.run(
         ["git", "-C", str(destination), "log", "-1", "--format=%H%x00%s"],
