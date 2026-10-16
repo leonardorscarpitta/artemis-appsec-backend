@@ -1,0 +1,41 @@
+# Local development stack: PostgreSQL + API in debug mode with live reload.
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - db_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    image: maven:3.9-eclipse-temurin-25
+    user: "${UID:-1000}:${GID:-1000}"
+    working_dir: /app
+    command: >
+      mvn -B -Dmaven.repo.local=/app/.m2/repository spring-boot:run
+      -Dspring-boot.run.profiles=dev
+      -Dspring-boot.run.jvmArguments="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005"
+    env_file: .env
+    environment:
+      HOME: /tmp
+      DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
+    ports:
+      - "${API_PORT:-8080}:8080"
+      - "${DEBUG_PORT:-5005}:5005"
+    volumes:
+      - ./:/app
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db_data:

@@ -1,0 +1,22 @@
+# Local development: demo data, verbose logs, no identity provider required.
+spring:
+  flyway:
+    locations: classpath:db/migration,classpath:db/seed
+  jpa:
+    show-sql: false
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${OIDC_ISSUER_URI:http://localhost:9091}
+
+logging:
+  level:
+    io.github.artemiscore.artemis: DEBUG
+    org.springframework.web: DEBUG
+
+artemis:
+  security:
+    auth-enabled: ${AUTH_ENABLED:false}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
