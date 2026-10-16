@@ -203,8 +203,8 @@ Options: `--stages secrets,sast,...` and `--tool sca=Grype` / `--tool dockerfile
 
 Scans run in the separate scanner runner (see "Scanner runner"); the API only queues work and records results.
 
-1. A scan is queued by `POST /api/v1/repositories/{name}/scans` (manual, counts against the plan's monthly quota → `409` when exhausted), by re-running a run, or automatically when a repository is connected. Runs keep a snapshot of each enabled stage: tool and fail threshold.
-2. The runner claims the oldest queued run (`SELECT … FOR UPDATE SKIP LOCKED`, so several runners never share a run). Stages that are not available yet (`image`, `dast`) are skipped at that point.
+1. A scan is queued by `POST /api/v1/repositories/{name}/scans` (manual, counts against the plan's monthly quota → `409` when exhausted), by re-running a run, or automatically when a public repository is connected (private ones wait until their deploy key is added). Runs keep a snapshot of each enabled stage: tool and fail threshold.
+2. The runner claims the oldest queued run (`SELECT … FOR UPDATE SKIP LOCKED`, so several runners never share a run). Stages that are not available yet (`dast`) are skipped at that point.
 3. For each stage the runner reports `completed`, `skipped` or `error` plus normalized findings. The API decides the stage status: `error` → `failed`; `completed` → `failed` when a finding reaches the stage's fail threshold (`failedBy`), `warning` when there are findings below it, `passed` otherwise.
 4. On `complete`, stages that were not reported are skipped and the run becomes `success` or `failed`; the repository's last scan time is updated. Runs still `running` after `SCANNER_STALE_RUN_MINUTES` (default 60) are failed by a scheduled sweep.
 
