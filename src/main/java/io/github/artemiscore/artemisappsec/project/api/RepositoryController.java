@@ -1,6 +1,7 @@
 package io.github.artemiscore.artemisappsec.project.api;
 
 import java.net.URI;
+import java.security.Principal;
 import java.util.List;
 
 import org.springframework.http.ResponseEntity;
@@ -27,6 +28,9 @@ import jakarta.validation.Valid;
 @Tag(name = "Repositories", description = "Monitored code repositories, their scan settings and pipelines")
 class RepositoryController {
 
+	/** Recorded as the actor when authentication is disabled (dev profile). */
+	private static final String ANONYMOUS_ACTOR = "local-developer";
+
 	private final ProjectService projects;
 
 	RepositoryController(ProjectService projects) {
@@ -44,8 +48,8 @@ class RepositoryController {
 	}
 
 	@PostMapping("/repositories")
-	ResponseEntity<ProjectDetails> create(@Valid @RequestBody CreateProjectCommand command) {
-		ProjectDetails created = projects.create(command);
+	ResponseEntity<ProjectDetails> create(@Valid @RequestBody CreateProjectCommand command, Principal principal) {
+		ProjectDetails created = projects.create(command, principal != null ? principal.getName() : ANONYMOUS_ACTOR);
 		return ResponseEntity.created(URI.create("/api/v1/repositories/" + created.project().name())).body(created);
 	}
 

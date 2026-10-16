@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -23,7 +24,9 @@ import io.github.artemiscore.artemisappsec.pipelinerun.domain.PipelineRun;
 import io.github.artemiscore.artemisappsec.pipelinerun.domain.PipelineRun.StageSelection;
 import io.github.artemiscore.artemisappsec.pipelinerun.domain.RunStatus;
 import io.github.artemiscore.artemisappsec.pipelinerun.domain.StageRun;
+import io.github.artemiscore.artemisappsec.pipelinerun.domain.StageStatus;
 import io.github.artemiscore.artemisappsec.pipelinerun.persistence.PipelineRunRepository;
+import io.github.artemiscore.artemisappsec.project.service.ProjectDetails;
 import io.github.artemiscore.artemisappsec.project.service.ProjectService;
 import io.github.artemiscore.artemisappsec.project.service.ProjectSummary;
 import io.github.artemiscore.artemisappsec.shared.error.BusinessRuleException;
@@ -34,6 +37,9 @@ import io.github.artemiscore.artemisappsec.shared.error.ResourceNotFoundExceptio
 class PipelineRunServiceImpl implements PipelineRunService {
 
 	private static final Duration SUMMARY_WINDOW = Duration.ofDays(7);
+	/** Placeholders until the runner reports the commit it actually cloned. */
+	private static final String PENDING_COMMIT = "pending";
+	private static final String PENDING_MESSAGE = "Waiting for the scanner runner";
 
 	private final PipelineRunRepository runs;
 	private final ProjectService projects;
@@ -93,16 +99,100 @@ class PipelineRunServiceImpl implements PipelineRunService {
 		PipelineRun source = load(number);
 		ProjectSummary project = projects.findById(source.getProjectId())
 			.orElseThrow(() -> new ResourceNotFoundException("Repository", source.getProjectId()));
-		List<StageSelection> stages = projects.getByName(project.name()).pipeline().stream()
-			.filter(s -> s.enabled())
-			.map(s -> new StageSelection(s.id(), s.tool()))
-			.toList();
-		if (stages.isEmpty()) {
-			throw new BusinessRuleException("Repository '%s' has no enabled pipeline stages".formatted(project.name()));
-		}
+		List<StageSelection> stages = enabledStages(project.name());
 		PipelineRun run = PipelineRun.queued(runs.nextNumber(), source.getProjectId(), source.getBranch(),
 				source.getCommitSha(), source.getCommitMessage(), actor, stages);
 		return toDetails(runs.save(run), Map.of(project.id(), project.name()));
+	}
+
+	@Override
+	@Transactional
+	public RunDetails queueScan(String repository, String actor) {
+		ProjectDetails project = projects.getByName(repository);
+		billing.assertCanScan();
+		List<StageSelection> stages = enabledStages(repository);
+		PipelineRun run = PipelineRun.queued(runs.nextNumber(), project.project().id(), project.project().branch(),
+				PENDING_COMMIT, PENDING_MESSAGE, actor, stages);
+		return toDetails(runs.save(run), Map.of(project.project().id(), repository));
+	}
+
+	@Override
+	@Transactional
+	public Optional<ClaimedRun> claimNext() {
+		Optional<UUID> next = runs.lockNextQueued();
+		if (next.isEmpty()) {
+			return Optional.empty();
+		}
+		PipelineRun run = loadById(next.get());
+		run.start(Instant.now(clock));
+		List<StageAssignment> pending = pendingStages(run);
+		return Optional.of(new ClaimedRun(run.getId(), run.getNumber(), run.getProjectId(), run.getBranch(), pending));
+	}
+
+	@Override
+	public RunJob job(UUID runId) {
+		PipelineRun run = loadById(runId);
+		return new RunJob(run.getId(), run.getNumber(), run.getProjectId(), run.getStatus(), pendingStages(run));
+	}
+
+	@Override
+	@Transactional
+	public void recordSource(UUID runId, String commitSha, String commitMessage) {
+		loadById(runId).recordSource(commitSha, commitMessage);
+	}
+
+	@Override
+	@Transactional
+	public StageStatus recordStage(UUID runId, StageResult r) {
+		StageRun stage = loadById(runId).recordStage(r.stage(), r.tool(), r.outcome(), r.durationSeconds(), r.log(),
+				r.findings(), r.highestSeverity(), r.newFindings());
+		return stage.getStatus();
+	}
+
+	@Override
+	@Transactional
+	public void complete(UUID runId) {
+		PipelineRun run = loadById(runId);
+		Instant now = Instant.now(clock);
+		run.complete(now);
+		projects.recordScan(run.getProjectId(), now);
+	}
+
+	@Override
+	@Transactional
+	public void fail(UUID runId, String reason) {
+		loadById(runId).fail(reason, Instant.now(clock));
+	}
+
+	@Override
+	@Transactional
+	public int failStaleRuns(Duration maxDuration) {
+		Instant now = Instant.now(clock);
+		List<PipelineRun> stale = runs.findByStatusAndStartedAtBefore(RunStatus.RUNNING, now.minus(maxDuration));
+		stale.forEach(r -> r.fail("the scanner runner did not finish within %d minutes".formatted(maxDuration.toMinutes()), now));
+		return stale.size();
+	}
+
+	private List<StageSelection> enabledStages(String repository) {
+		List<StageSelection> stages = projects.getByName(repository).pipeline().stream()
+			.filter(s -> s.enabled())
+			.map(s -> new StageSelection(s.id(), s.tool(), s.failOn()))
+			.toList();
+		if (stages.isEmpty()) {
+			throw new BusinessRuleException("Repository '%s' has no enabled pipeline stages".formatted(repository));
+		}
+		return stages;
+	}
+
+	private static List<StageAssignment> pendingStages(PipelineRun run) {
+		return run.getStages().stream()
+			.filter(s -> s.getStatus() == StageStatus.PENDING)
+			.map(s -> new StageAssignment(s.getStage(), s.getTool(), s.getFailOn()))
+			.toList();
+	}
+
+	private PipelineRun loadById(UUID id) {
+		return runs.findWithStagesById(id).orElseThrow(() -> new ResourceNotFoundException("Pipeline run", id));
 	}
 
 	@Override

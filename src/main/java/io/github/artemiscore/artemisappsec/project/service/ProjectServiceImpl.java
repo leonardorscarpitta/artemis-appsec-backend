@@ -1,5 +1,6 @@
 package io.github.artemiscore.artemisappsec.project.service;
 
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -7,6 +8,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,10 +25,13 @@ class ProjectServiceImpl implements ProjectService {
 
 	private final ProjectRepository projects;
 	private final ObjectProvider<ProjectFindingStats> findingStats;
+	private final ApplicationEventPublisher events;
 
-	ProjectServiceImpl(ProjectRepository projects, ObjectProvider<ProjectFindingStats> findingStats) {
+	ProjectServiceImpl(ProjectRepository projects, ObjectProvider<ProjectFindingStats> findingStats,
+			ApplicationEventPublisher events) {
 		this.projects = projects;
 		this.findingStats = findingStats;
+		this.events = events;
 	}
 
 	@Override
@@ -47,7 +52,7 @@ class ProjectServiceImpl implements ProjectService {
 
 	@Override
 	@Transactional
-	public ProjectDetails create(CreateProjectCommand command) {
+	public ProjectDetails create(CreateProjectCommand command, String actor) {
 		String name = nameFromUrl(command.url());
 		if (projects.existsByName(name)) {
 			throw new BusinessRuleException("A repository named '%s' is already connected".formatted(name));
@@ -55,7 +60,15 @@ class ProjectServiceImpl implements ProjectService {
 		Project project = new Project(name, command.url(), command.branch(), command.stack());
 		applySettings(project, command.settings());
 		applyPipeline(project, command.pipeline());
-		return toDetails(projects.save(project));
+		Project saved = projects.save(project);
+		events.publishEvent(new ProjectCreated(saved.getId(), saved.getName(), actor));
+		return toDetails(saved);
+	}
+
+	@Override
+	@Transactional
+	public void recordScan(UUID projectId, Instant finishedAt) {
+		projects.findById(projectId).ifPresent(p -> p.recordScan(finishedAt));
 	}
 
 	@Override

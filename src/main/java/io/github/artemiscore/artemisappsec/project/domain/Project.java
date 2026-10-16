@@ -107,6 +107,10 @@ public class Project {
 			.update(enabled, tool, failOn);
 	}
 
+	public void recordScan(Instant finishedAt) {
+		this.lastScanAt = finishedAt;
+	}
+
 	public List<PipelineStageConfig> getPipeline() {
 		return pipeline.stream().sorted(Comparator.comparing(PipelineStageConfig::getStage)).toList();
 	}
