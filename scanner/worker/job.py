@@ -6,7 +6,9 @@ from pathlib import Path
 from .api import ApiClient
 from .clone import CloneRefused, clone
 from .config import Config
+from .sanitize import safe_log
 from .scan import run_stage
+from .tools import MAX_FINDINGS
 
 log = logging.getLogger("artemis.runner")
 
@@ -30,25 +32,25 @@ def process(job: dict, api: ApiClient, config: Config) -> None:
             return
         api.source(run_id, sha, subject[:500])
 
-        directory = repo.get("path") or ""
-        if directory:
-            target = (src / directory).resolve()
+        folders = repo.get("paths") or []
+        targets = []
+        for folder in folders:
+            target = (src / folder).resolve()
             if not target.is_relative_to(src.resolve()) or not target.is_dir():
-                api.fail(run_id, f"Directory '{directory}' was not found on branch {repo.get('branch', 'main')}.")
+                api.fail(run_id, f"Folder '{folder}' was not found on branch {repo.get('branch', 'main')}.")
                 return
-            src = target
+            targets.append((folder, target))
 
         failed_stage = None
         for stage in job.get("stages", []):
             if failed_stage:
                 api.stage(run_id, stage["id"], not_run(stage, failed_stage))
                 continue
-            result = run_stage(stage["id"], stage.get("tool", ""), src, work, timeout)
-            if directory:
-                # Paths stay relative to the repository root, not to the scanned folder.
-                for item in result["findings"]:
-                    if item.get("location"):
-                        item["location"]["path"] = f"{directory}/{item['location']['path']}"
+            if targets:
+                result = merge([(folder, run_stage(stage["id"], stage.get("tool", ""), target, work, timeout))
+                                for folder, target in targets])
+            else:
+                result = run_stage(stage["id"], stage.get("tool", ""), src, work, timeout)
             status = api.stage(run_id, stage["id"], result).get("status", result["status"])
             log.info("run %s: %s/%s -> %s (%d finding(s))", job.get("number"), stage["id"], result["tool"],
                      status, len(result["findings"]))
@@ -58,6 +60,26 @@ def process(job: dict, api: ApiClient, config: Config) -> None:
     finally:
         # Source code never outlives the run.
         wipe(work)
+
+
+def merge(parts: list[tuple[str, dict]]) -> dict:
+    """Combines one stage's results from several monorepo folders into a single stage result."""
+    statuses = [result["status"] for _, result in parts]
+    status = "error" if "error" in statuses else "skipped" if all(st == "skipped" for st in statuses) else "completed"
+    findings = []
+    for folder, result in parts:
+        for item in result["findings"]:
+            # Paths stay relative to the repository root, not to the scanned folder.
+            if item.get("location"):
+                item["location"]["path"] = f"{folder}/{item['location']['path']}"
+            findings.append(item)
+    return {
+        "status": status,
+        "tool": parts[0][1]["tool"],
+        "durationSeconds": sum(result["durationSeconds"] for _, result in parts),
+        "log": safe_log("\n\n".join(f"[{folder}]\n{result['log']}" for folder, result in parts)),
+        "findings": findings[:MAX_FINDINGS],
+    }
 
 
 def not_run(stage: dict, failed_stage: str) -> dict:

@@ -21,6 +21,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.OrderColumn;
 import jakarta.persistence.Table;
 
 /** A source code repository monitored by Artemis. */
@@ -42,8 +43,6 @@ public class Project {
 
 	@Column(nullable = false)
 	private String branch;
-
-	private String directory;
 
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false)
@@ -69,6 +68,11 @@ public class Project {
 	@OneToMany(mappedBy = "project", cascade = CascadeType.ALL, orphanRemoval = true)
 	private List<PipelineStageConfig> pipeline = new ArrayList<>();
 
+	@ElementCollection(fetch = FetchType.EAGER)
+	@CollectionTable(name = "project_folder", joinColumns = @JoinColumn(name = "project_id"))
+	@OrderColumn(name = "position")
+	private List<Folder> folders = new ArrayList<>();
+
 	@Column(name = "last_scan_at")
 	private Instant lastScanAt;
 
@@ -78,13 +82,12 @@ public class Project {
 	protected Project() {
 	}
 
-	public Project(UUID organizationId, String name, String sshUrl, String branch, String directory, Stack stack) {
+	public Project(UUID organizationId, String name, String sshUrl, String branch, Stack stack) {
 		this.id = UUID.randomUUID();
 		this.organizationId = organizationId;
 		this.name = name;
 		this.sshUrl = sshUrl;
 		this.branch = branch;
-		this.directory = directory;
 		this.stack = stack;
 		this.scanSchedule = ScanSchedule.EVERY_24_HOURS;
 		this.dockerfileMode = DockerfileMode.RECOMMENDED;
@@ -142,8 +145,17 @@ public class Project {
 		return branch;
 	}
 
-	public String getDirectory() {
-		return directory;
+	public List<Folder> getFolders() {
+		return folders;
+	}
+
+	/** Empty folders scan the whole repository; a monorepo's stack is its first folder's. */
+	public void updateFolders(List<Folder> folders) {
+		this.folders.clear();
+		this.folders.addAll(folders);
+		if (!folders.isEmpty()) {
+			this.stack = folders.getFirst().getStack();
+		}
 	}
 
 	public Stack getStack() {
