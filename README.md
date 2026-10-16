@@ -246,6 +246,8 @@ Repository summaries also carry `access` (`public` \| `ssh`) and `accessStatus` 
 
 **Monorepos:** repository settings carry `folders: [{path, stack}]` (create and `PUT /settings`; empty = whole repository; up to 20 unique relative paths of letters/digits/`.`/`_`/`-` segments, no `.`/`..`, ≤ 120 chars; table `project_folder`, V14). The repository's `stack` becomes the first folder's. The claim sends `repository.paths`; the runner fails the run if a folder is missing on the branch, otherwise runs every stage on each folder in turn and merges the results (findings capped at 5 000 per stage, logs prefixed with `[folder]`), prefixing finding paths so they stay relative to the repository root.
 
+**Findings CSV:** `GET /api/v1/findings/export` (same filters as `GET /findings`, `viewFindings`) → `text/csv; charset=UTF-8` with a BOM, `Content-Disposition: attachment; filename="artemis-findings-<org>-<date>.csv"`; RFC 4180 quoting and CSV-injection protection (cells starting with `= + - @` tab/CR get a leading `'`).
+
 **Removing a repository:** `DELETE /api/v1/repositories/{name}` (`pipelines` permission) → `204`; the database cascades its findings, runs, reports, deploy keys and risk acceptances.
 
 Stages run in pipeline order and **a failed stage stops the pipeline**: as soon as the API answers `failed` for a stage, the runner does not run the remaining stages and reports them as `skipped` ("Not run: the <stage> stage failed"), then completes the run (which ends `failed`). Warnings do not stop it.
