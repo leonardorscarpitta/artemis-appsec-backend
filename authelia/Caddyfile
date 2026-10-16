@@ -1,0 +1,17 @@
+# TLS terminator for Authelia (it refuses plain-HTTP public URLs). Uses Caddy's local CA.
+{
+	auto_https disable_redirects
+	local_certs
+}
+
+auth.artemis.localhost:9443 {
+	reverse_proxy authelia:9091
+}
+
+# Internal plain-HTTP endpoint for other containers (e.g. the API fetching JWKS); not published.
+:9080 {
+	reverse_proxy authelia:9091 {
+		header_up X-Forwarded-Proto https
+		header_up X-Forwarded-Host auth.artemis.localhost:9443
+	}
+}

@@ -1,4 +1,4 @@
-# Local development: demo data, verbose logs, no identity provider required.
+# Local development: demo data, verbose logs, local Authelia as identity provider.
 spring:
   flyway:
     locations: classpath:db/migration,classpath:db/seed
@@ -6,11 +6,6 @@ spring:
     out-of-order: true
   jpa:
     show-sql: false
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: ${OIDC_ISSUER_URI:http://localhost:9091}
 
 logging:
   level:
@@ -19,6 +14,9 @@ logging:
 
 artemis:
   security:
-    auth-enabled: ${AUTH_ENABLED:false}
+    auth-enabled: ${AUTH_ENABLED:true}
+    oidc:
+      issuer-uri: ${OIDC_ISSUER_URI:https://auth.artemis.localhost:9443}
+      jwk-set-uri: ${OIDC_JWK_SET_URI:http://auth-proxy:9080/jwks.json}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}

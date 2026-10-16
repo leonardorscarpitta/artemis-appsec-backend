@@ -15,11 +15,6 @@ spring:
           time_zone: UTC
   flyway:
     locations: classpath:db/migration
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: ${OIDC_ISSUER_URI}
 
 server:
   error:
@@ -45,5 +40,9 @@ springdoc:
 artemis:
   security:
     auth-enabled: true
+    oidc:
+      issuer-uri: ${OIDC_ISSUER_URI}
+      jwk-set-uri: ${OIDC_JWK_SET_URI:}
+      audience: ${OIDC_AUDIENCE:artemis-api}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:}
