@@ -12,6 +12,11 @@ import io.github.artemiscore.artemisappsec.shared.domain.Severity;
 import io.github.artemiscore.artemisappsec.shared.domain.Stage;
 import io.github.artemiscore.artemisappsec.shared.error.BusinessRuleException;
 import jakarta.persistence.CascadeType;
+import jakarta.persistence.CollectionTable;
+import jakarta.persistence.ElementCollection;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.OrderColumn;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -66,13 +71,20 @@ public class PipelineRun {
 	@OneToMany(mappedBy = "run", cascade = CascadeType.ALL, orphanRemoval = true)
 	private List<StageRun> stages = new ArrayList<>();
 
+	@ElementCollection(fetch = FetchType.EAGER)
+	@CollectionTable(name = "pipeline_run_folder", joinColumns = @JoinColumn(name = "run_id"))
+	@OrderColumn(name = "position")
+	@Column(name = "path")
+	private List<String> folders = new ArrayList<>();
+
 	protected PipelineRun() {
 	}
 
 	/** A queued manual run of the given stages, in pipeline order. */
 	public static PipelineRun queued(long number, UUID projectId, String branch, String commitSha, String commitMessage,
-			String actor, List<StageSelection> selection) {
+			String actor, List<StageSelection> selection, List<String> folders) {
 		PipelineRun run = new PipelineRun();
+		run.folders.addAll(folders);
 		run.id = UUID.randomUUID();
 		run.number = number;
 		run.projectId = projectId;
@@ -88,6 +100,11 @@ public class PipelineRun {
 			run.stages.add(new StageRun(run, i, s.stage(), s.tool(), s.failOn()));
 		}
 		return run;
+	}
+
+	/** Monorepo folders this run scans; empty for the whole repository. */
+	public List<String> getFolders() {
+		return List.copyOf(folders);
 	}
 
 	/** Called when the scanner runner picks the run up; stages it cannot execute are skipped right away. */

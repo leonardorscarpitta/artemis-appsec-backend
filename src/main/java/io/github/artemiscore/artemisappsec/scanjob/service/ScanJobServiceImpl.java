@@ -113,7 +113,7 @@ class ScanJobServiceImpl implements ScanJobService {
 			.toList();
 		return Optional.of(new JobAssignment("scan", run.runId(), run.number(),
 				new JobAssignment.Repository(project.name(), project.url(), run.branch(),
-						project.folders().stream().map(f -> f.path()).toList(), project.containerImage(), project.access()),
+						run.folders(), project.containerImage(), project.access()),
 				credentials, stages, new JobAssignment.Limits(scanner.stageTimeoutSeconds(), scanner.maxRepoSizeMb())));
 	}
 

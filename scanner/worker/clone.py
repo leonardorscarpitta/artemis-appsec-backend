@@ -243,7 +243,7 @@ def clone(url: str, branch: str, destination: Path, timeout: int, max_size_mb: i
         shutil.rmtree(destination, ignore_errors=True)
         if ssh:
             raise CloneRefused(explain_ssh_error(result.stderr))
-        raise CloneRefused("The repository could not be cloned (check that it is public and the branch exists)")
+        raise CloneRefused("The repository could not be cloned. Check that the branch exists. If the repository is private, add it with its SSH URL (git@host:owner/repo.git) and set up its deploy key in the Access tab")
 
     log = subprocess.run(
         ["git", "-C", str(destination), "log", "-1", "--format=%H%x00%s"],
