@@ -74,6 +74,7 @@ Rules:
 | Module | Responsibility | Base path |
 | --- | --- | --- |
 | `project` | Monitored repositories, scan settings, pipeline configuration | `/api/v1/repositories`, `/api/v1/pipeline/stages` |
+| `pipelinerun` | Pipeline executions: list/filter, 7-day summary, run detail with stage logs, re-run and cancel | `/api/v1/pipeline-runs` |
 
 JSON enum values match the frontend (`"Java + Spring"`, `"24h"`, `"sast"`, `"critical"`...).
 
