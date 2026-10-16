@@ -116,6 +116,7 @@ class ProjectServiceImpl implements ProjectService {
 
 	private static PipelineStageView toView(PipelineStageConfig c) {
 		Stage s = c.getStage();
-		return new PipelineStageView(s, s.phase(), s.tools(), c.getTool(), c.isEnabled(), c.getFailOn(), s.estimatedMinutes());
+		return new PipelineStageView(s, s.phase(), s.tools(), c.getTool(), c.isEnabled(), c.getFailOn(), s.estimatedMinutes(),
+				s.available());
 	}
 }

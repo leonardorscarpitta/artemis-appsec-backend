@@ -53,6 +53,9 @@ public class PipelineStageConfig {
 		if (!stage.tools().contains(tool)) {
 			throw new IllegalArgumentException("Tool '%s' is not available for stage %s".formatted(tool, stage.wireValue()));
 		}
+		if (enabled && !stage.available()) {
+			throw new IllegalArgumentException("Stage %s is not available yet".formatted(stage.wireValue()));
+		}
 		this.enabled = enabled;
 		this.tool = tool;
 		this.failOn = stage.canFail() ? (failOn == null ? stage.defaultFailOn() : failOn) : null;
