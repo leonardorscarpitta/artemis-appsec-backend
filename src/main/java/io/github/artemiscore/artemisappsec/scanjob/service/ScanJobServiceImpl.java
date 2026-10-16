@@ -96,17 +96,18 @@ class ScanJobServiceImpl implements ScanJobService {
 			return Optional.empty();
 		}
 		ProjectSummary project = found.get();
-		SshCredentials credentials = null;
-		if ("ssh".equals(project.access())) {
-			if (!projects.hostKeyKnown(project.id())) {
-				runs.fail(run.runId(), "The Git server's host key is not known yet: run 'Test access' in the repository's Access tab first");
-				return Optional.empty();
-			}
-			credentials = projects.sshCredentials(project.id(), "run #" + run.number()).orElse(null);
-			if (credentials == null) {
-				runs.fail(run.runId(), NO_DEPLOY_KEY);
-				return Optional.empty();
-			}
+		if (!"ssh".equals(project.access())) {
+			runs.fail(run.runId(), "Only SSH repositories with an Artemis deploy key are scanned: add the repository again with its SSH URL and set up its key in the Access tab");
+			return Optional.empty();
+		}
+		if (!projects.hostKeyKnown(project.id())) {
+			runs.fail(run.runId(), "The Git server's host key is not known yet: run 'Test access' in the repository's Access tab first");
+			return Optional.empty();
+		}
+		SshCredentials credentials = projects.sshCredentials(project.id(), "run #" + run.number()).orElse(null);
+		if (credentials == null) {
+			runs.fail(run.runId(), NO_DEPLOY_KEY);
+			return Optional.empty();
 		}
 		List<JobAssignment.StageJob> stages = run.stages().stream()
 			.map(s -> new JobAssignment.StageJob(s.id(), s.tool(), s.failOn()))

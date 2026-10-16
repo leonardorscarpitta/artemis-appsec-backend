@@ -29,6 +29,7 @@ import io.github.artemiscore.artemisappsec.pipelinerun.domain.StageStatus;
 import io.github.artemiscore.artemisappsec.pipelinerun.persistence.PipelineRunRepository;
 import io.github.artemiscore.artemisappsec.project.service.ProjectDetails;
 import io.github.artemiscore.artemisappsec.project.service.ProjectService;
+import io.github.artemiscore.artemisappsec.project.domain.AccessStatus;
 import io.github.artemiscore.artemisappsec.project.service.ProjectSummary;
 import io.github.artemiscore.artemisappsec.shared.error.BusinessRuleException;
 import io.github.artemiscore.artemisappsec.shared.error.ResourceNotFoundException;
@@ -106,6 +107,7 @@ class PipelineRunServiceImpl implements PipelineRunService {
 		billing.assertCanScan(organizationId);
 		ProjectSummary project = projects.findById(source.getProjectId())
 			.orElseThrow(() -> new ResourceNotFoundException("Repository", source.getProjectId()));
+		requireVerifiedAccess(project);
 		List<StageSelection> stages = enabledStages(organizationId, project.name());
 		// Folders removed from the repository since then are dropped; none left means all of them.
 		List<String> current = project.folders().stream().map(f -> f.path()).toList();
@@ -119,6 +121,7 @@ class PipelineRunServiceImpl implements PipelineRunService {
 	@Transactional
 	public RunDetails queueScan(UUID organizationId, String repository, String actor, List<String> folders) {
 		ProjectDetails project = projects.getByName(organizationId, repository);
+		requireVerifiedAccess(project.project());
 		List<String> selected = selectFolders(project.project(), folders);
 		billing.assertCanScan(organizationId);
 		List<StageSelection> stages = enabledStages(organizationId, repository);
@@ -220,6 +223,13 @@ class PipelineRunServiceImpl implements PipelineRunService {
 		return runs.findByNumber(number)
 			.filter(r -> organizationProjects.containsKey(r.getProjectId()))
 			.orElseThrow(() -> new ResourceNotFoundException("Pipeline run", number));
+	}
+
+	/** Scans need a working deploy key: refusing early keeps the run (and the monthly quota) for when access works. */
+	private static void requireVerifiedAccess(ProjectSummary project) {
+		if (project.accessStatus() != AccessStatus.VERIFIED) {
+			throw new BusinessRuleException("Set up access first: add the deploy key from the repository's Access tab and select 'Test access'");
+		}
 	}
 
 	/**
