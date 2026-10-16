@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import io.github.artemiscore.artemisappsec.finding.domain.FindingKind;
 import io.github.artemiscore.artemisappsec.finding.domain.FindingStatus;
 import io.github.artemiscore.artemisappsec.finding.service.ChangeStatusCommand;
 import io.github.artemiscore.artemisappsec.finding.service.FindingDetails;
@@ -35,6 +36,7 @@ class FindingController {
 
 	@GetMapping
 	List<FindingSummary> search(@RequestParam(required = false) @Size(max = 200) String q,
+			@RequestParam(required = false) FindingKind kind,
 			@RequestParam(required = false) Severity severity, @RequestParam(required = false) FindingStatus status,
 			@RequestParam(required = false) @Size(max = 255) String repository,
 			@RequestParam(defaultValue = "detected") String sort, @RequestParam(defaultValue = "desc") String dir) {
@@ -48,7 +50,7 @@ class FindingController {
 			case "desc" -> false;
 			default -> throw new IllegalArgumentException("dir must be 'asc' or 'desc'");
 		};
-		return findings.search(new FindingQuery(q, severity, status, repository, field, ascending));
+		return findings.search(new FindingQuery(q, kind, severity, status, repository, field, ascending));
 	}
 
 	@GetMapping("/{id}")

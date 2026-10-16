@@ -48,6 +48,9 @@ class FindingServiceImpl implements FindingService {
 		if (query.text() != null && !query.text().isBlank()) {
 			spec = spec.and(FindingSpecifications.matchesText(query.text().trim()));
 		}
+		if (query.kind() != null) {
+			spec = spec.and(FindingSpecifications.hasKind(query.kind()));
+		}
 		if (query.severity() != null) {
 			spec = spec.and(FindingSpecifications.hasSeverity(query.severity()));
 		}

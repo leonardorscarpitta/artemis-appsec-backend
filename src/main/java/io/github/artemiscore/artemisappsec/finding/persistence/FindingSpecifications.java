@@ -6,6 +6,7 @@ import java.util.UUID;
 import org.springframework.data.jpa.domain.Specification;
 
 import io.github.artemiscore.artemisappsec.finding.domain.Finding;
+import io.github.artemiscore.artemisappsec.finding.domain.FindingKind;
 import io.github.artemiscore.artemisappsec.finding.domain.FindingStatus;
 import io.github.artemiscore.artemisappsec.shared.domain.Severity;
 
@@ -34,5 +35,9 @@ public final class FindingSpecifications {
 
 	public static Specification<Finding> hasSeverity(Severity severity) {
 		return (root, query, cb) -> cb.equal(root.get("severity"), severity);
+	}
+
+	public static Specification<Finding> hasKind(FindingKind kind) {
+		return (root, query, cb) -> cb.equal(root.get("kind"), kind);
 	}
 }
