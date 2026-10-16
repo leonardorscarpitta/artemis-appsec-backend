@@ -13,6 +13,12 @@
 	<version>0.0.1-SNAPSHOT</version>
 	<name>artemis</name>
 	<description>Artemis SAST platform API</description>
+	<licenses>
+		<license>
+			<name>PolyForm-Noncommercial-1.0.0</name>
+			<url>https://polyformproject.org/licenses/noncommercial/1.0.0</url>
+		</license>
+	</licenses>
 
 	<properties>
 		<java.version>25</java.version>

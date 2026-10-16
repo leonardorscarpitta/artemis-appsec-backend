@@ -11,6 +11,7 @@
   <img src="https://img.shields.io/badge/Java-25-0b4f8a" alt="Java 25">
   <img src="https://img.shields.io/badge/Spring%20Boot-4.1-0b4f8a" alt="Spring Boot 4.1">
   <img src="https://img.shields.io/badge/PostgreSQL-18-0b4f8a" alt="PostgreSQL 18">
+  <img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-5a6474" alt="License: PolyForm Noncommercial 1.0.0">
 </p>
 
 ---
@@ -115,6 +116,11 @@ JSON enum values match the frontend (`"Java + Spring"`, `"24h"`, `"sast"`, `"cri
 
 ## Contributing
 
+- **How to contribute:** see [CONTRIBUTING.md](CONTRIBUTING.md) (contribution terms included).
 - **Branches:** `main` (stable) and `dev` (integration). Create `feat/*` or `bugfix/*` branches from `dev`.
 - **Commits:** [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/).
 - Update this README when modules, endpoints or conventions change.
+
+## License
+
+Artemis is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE.md). You may use, study, modify and share it for noncommercial purposes; commercial use (selling it, offering it as a paid service, charging for access) is reserved to the copyright holder. Contributions are welcome under the terms in [CONTRIBUTING.md](CONTRIBUTING.md).
