@@ -1,4 +1,4 @@
-# Local development stack: PostgreSQL, Authelia (OIDC behind Caddy TLS), the API in debug mode and the scanner runner.
+# Local development stack: PostgreSQL, Keycloak (OIDC behind Caddy TLS), Mailpit, the API in debug mode and the scanner runner.
 # Every service has a memory limit so the whole stack fits comfortably on a 16 GB machine (~4.3 GB in total).
 services:
   db:

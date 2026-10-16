@@ -25,9 +25,9 @@ Backend of Artemis, a SAST platform. The frontend lives in the [artemis-appsec-f
 Everything runs in Docker:
 
 ```sh
-cp .env.example .env             # first time only; adjust values
-./authelia/generate-secrets.sh   # first time only; prints the development logins
+cp .env.example .env             # first time only; set passwords and SCANNER_TOKEN
 docker compose up -d
+./keycloak/create-dev-users.sh   # first time only (once Keycloak is up); prints the development logins
 ```
 
 | Service | URL |
