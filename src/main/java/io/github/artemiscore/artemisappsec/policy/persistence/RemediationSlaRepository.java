@@ -1,9 +1,13 @@
 package io.github.artemiscore.artemisappsec.policy.persistence;
 
+import java.util.List;
+import java.util.UUID;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import io.github.artemiscore.artemisappsec.policy.domain.RemediationSla;
-import io.github.artemiscore.artemisappsec.shared.domain.Severity;
 
-public interface RemediationSlaRepository extends JpaRepository<RemediationSla, Severity> {
+public interface RemediationSlaRepository extends JpaRepository<RemediationSla, UUID> {
+
+	List<RemediationSla> findByOrganizationId(UUID organizationId);
 }

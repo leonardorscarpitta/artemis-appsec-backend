@@ -42,9 +42,12 @@ class FindingServiceImpl implements FindingService {
 	}
 
 	@Override
-	public List<FindingSummary> search(FindingQuery query) {
-		Map<UUID, ProjectSummary> projectsById = projectsById();
-		Specification<Finding> spec = Specification.unrestricted();
+	public List<FindingSummary> search(UUID organizationId, FindingQuery query) {
+		Map<UUID, ProjectSummary> projectsById = projectsById(organizationId);
+		if (projectsById.isEmpty()) {
+			return List.of();
+		}
+		Specification<Finding> spec = FindingSpecifications.inProjects(projectsById.keySet());
 		if (query.text() != null && !query.text().isBlank()) {
 			spec = spec.and(FindingSpecifications.matchesText(query.text().trim()));
 		}
@@ -72,30 +75,37 @@ class FindingServiceImpl implements FindingService {
 	}
 
 	@Override
-	public FindingDetails get(UUID id) {
-		return toDetails(load(id));
+	public FindingDetails get(UUID organizationId, UUID id) {
+		Map<UUID, ProjectSummary> projectsById = projectsById(organizationId);
+		return toDetails(load(id, projectsById), projectsById);
 	}
 
 	@Override
 	@Transactional
-	public FindingDetails changeStatus(UUID id, ChangeStatusCommand command) {
-		Finding finding = load(id);
+	public FindingDetails changeStatus(UUID organizationId, UUID id, ChangeStatusCommand command) {
+		Map<UUID, ProjectSummary> projectsById = projectsById(organizationId);
+		Finding finding = load(id, projectsById);
 		String note = command.note() == null || command.note().isBlank() ? null : command.note().trim();
 		finding.changeStatus(command.status(), note, Instant.now(clock));
-		return toDetails(finding);
+		return toDetails(finding, projectsById);
 	}
 
 	@Override
-	public List<FindingSummary> findActive() {
-		Map<UUID, ProjectSummary> projectsById = projectsById();
-		return findings.findByStatusIn(ACTIVE).stream()
+	public List<FindingSummary> findActive(UUID organizationId) {
+		Map<UUID, ProjectSummary> projectsById = projectsById(organizationId);
+		if (projectsById.isEmpty()) {
+			return List.of();
+		}
+		return findings.findByProjectIdInAndStatusIn(projectsById.keySet(), ACTIVE).stream()
 			.map(f -> toSummary(f, projectsById))
 			.sorted(Comparator.comparing(FindingSummary::detectedAt).reversed())
 			.toList();
 	}
 
-	private Finding load(UUID id) {
-		return findings.findWithEventsById(id).orElseThrow(() -> new ResourceNotFoundException("Finding", id));
+	private Finding load(UUID id, Map<UUID, ProjectSummary> organizationProjects) {
+		return findings.findWithEventsById(id)
+			.filter(f -> organizationProjects.containsKey(f.getProjectId()))
+			.orElseThrow(() -> new ResourceNotFoundException("Finding", id));
 	}
 
 	private static Sort sort(FindingQuery query) {
@@ -106,16 +116,16 @@ class FindingServiceImpl implements FindingService {
 		return primary.and(Sort.by("reference"));
 	}
 
-	private Map<UUID, ProjectSummary> projectsById() {
-		return projects.findAll().stream().collect(Collectors.toMap(ProjectSummary::id, p -> p));
+	private Map<UUID, ProjectSummary> projectsById(UUID organizationId) {
+		return projects.findAll(organizationId).stream().collect(Collectors.toMap(ProjectSummary::id, p -> p));
 	}
 
-	private FindingDetails toDetails(Finding finding) {
-		Map<UUID, ProjectSummary> projectsById = projectsById();
+	private FindingDetails toDetails(Finding finding, Map<UUID, ProjectSummary> projectsById) {
 		List<FindingSummary> related = List.of();
 		if (finding.getCve() != null) {
-			Specification<Finding> sameCve = (root, q, cb) -> cb.and(cb.equal(root.get("cve"), finding.getCve()),
-					cb.notEqual(root.get("id"), finding.getId()));
+			Specification<Finding> sameCve = FindingSpecifications.inProjects(projectsById.keySet())
+				.and((root, q, cb) -> cb.and(cb.equal(root.get("cve"), finding.getCve()),
+						cb.notEqual(root.get("id"), finding.getId())));
 			related = findings.findAll(sameCve).stream().map(f -> toSummary(f, projectsById)).toList();
 		}
 		List<FindingEventView> timeline = finding.getTimeline().stream().map(FindingServiceImpl::toEventView).toList();

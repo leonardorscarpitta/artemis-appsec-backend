@@ -5,6 +5,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 
@@ -29,9 +30,9 @@ class DashboardServiceImpl implements DashboardService {
 	}
 
 	@Override
-	public DashboardSummary summary() {
-		List<FindingSummary> active = findings.findActive();
-		List<ProjectSummary> repositories = projects.findAll();
+	public DashboardSummary summary(UUID organizationId) {
+		List<FindingSummary> active = findings.findActive(organizationId);
+		List<ProjectSummary> repositories = projects.findAll(organizationId);
 		double average = active.stream().map(FindingSummary::cvss).filter(Objects::nonNull).mapToDouble(Double::doubleValue)
 			.average().orElse(0);
 		List<SeverityCount> bySeverity = Arrays.stream(Severity.values())

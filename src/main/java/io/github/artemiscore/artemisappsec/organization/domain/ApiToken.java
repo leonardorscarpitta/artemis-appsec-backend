@@ -24,6 +24,9 @@ public class ApiToken {
 	@Id
 	private UUID id;
 
+	@Column(name = "organization_id", nullable = false)
+	private UUID organizationId;
+
 	@Column(nullable = false)
 	private String name;
 
@@ -51,8 +54,10 @@ public class ApiToken {
 	protected ApiToken() {
 	}
 
-	public ApiToken(String name, Set<TokenScope> scopes, String tokenHash, String lastFour, Instant expiresAt) {
+	public ApiToken(UUID organizationId, String name, Set<TokenScope> scopes, String tokenHash, String lastFour,
+			Instant expiresAt) {
 		this.id = UUID.randomUUID();
+		this.organizationId = organizationId;
 		this.name = name;
 		this.scopes.addAll(scopes);
 		this.tokenHash = tokenHash;

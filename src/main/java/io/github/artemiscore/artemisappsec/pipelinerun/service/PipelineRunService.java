@@ -10,19 +10,19 @@ import io.github.artemiscore.artemisappsec.pipelinerun.domain.StageStatus;
 /** Public contract of the pipeline run service. */
 public interface PipelineRunService {
 
-	List<RunView> find(RunFilter filter);
+	List<RunView> find(UUID organizationId, RunFilter filter);
 
-	RunsSummary summary();
+	RunsSummary summary(UUID organizationId);
 
-	RunDetails get(long number);
+	RunDetails get(UUID organizationId, long number);
 
 	/** Queues a new manual run of the same commit using the repository's current pipeline configuration. */
-	RunDetails rerun(long number, String actor);
+	RunDetails rerun(UUID organizationId, long number, String actor);
 
-	RunDetails cancel(long number);
+	RunDetails cancel(UUID organizationId, long number);
 
 	/** Queues a manual scan of a repository with its current pipeline configuration (counts against the plan's quota). */
-	RunDetails queueScan(String repository, String actor);
+	RunDetails queueScan(UUID organizationId, String repository, String actor);
 
 	// --- Scanner runner (internal job API) ---
 

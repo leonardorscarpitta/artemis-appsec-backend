@@ -13,6 +13,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import io.github.artemiscore.artemisappsec.organization.api.RequiresPermission;
+import io.github.artemiscore.artemisappsec.organization.domain.Permission;
+import io.github.artemiscore.artemisappsec.organization.service.Tenant;
 import io.github.artemiscore.artemisappsec.report.service.GenerateReportCommand;
 import io.github.artemiscore.artemisappsec.report.service.ReportDetails;
 import io.github.artemiscore.artemisappsec.report.service.ReportService;
@@ -33,18 +36,19 @@ class ReportController {
 	}
 
 	@GetMapping
-	List<ReportSummary> list(Locale locale) {
-		return reports.findAll(locale);
+	List<ReportSummary> list(Tenant tenant, Locale locale) {
+		return reports.findAll(tenant.organizationId(), locale);
 	}
 
 	@GetMapping("/{id}")
-	ReportDetails get(@PathVariable UUID id, Locale locale) {
-		return reports.get(id, locale);
+	ReportDetails get(Tenant tenant, @PathVariable UUID id, Locale locale) {
+		return reports.get(tenant.organizationId(), id, locale);
 	}
 
 	@PostMapping
-	ResponseEntity<ReportSummary> request(@Valid @RequestBody GenerateReportCommand command, Locale locale) {
-		ReportSummary created = reports.request(command, locale);
+	@RequiresPermission(Permission.TRIAGE)
+	ResponseEntity<ReportSummary> request(Tenant tenant, @Valid @RequestBody GenerateReportCommand command, Locale locale) {
+		ReportSummary created = reports.request(tenant.organizationId(), command, locale);
 		return ResponseEntity.accepted().location(URI.create("/api/v1/reports/" + created.id())).body(created);
 	}
 }

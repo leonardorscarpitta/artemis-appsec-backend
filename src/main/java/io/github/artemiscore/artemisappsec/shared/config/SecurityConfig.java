@@ -11,7 +11,10 @@ import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtClaimValidator;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
@@ -62,24 +65,22 @@ public class SecurityConfig {
 			NimbusJwtDecoder decoder = StringUtils.hasText(oidc.jwkSetUri())
 					? NimbusJwtDecoder.withJwkSetUri(oidc.jwkSetUri()).build()
 					: NimbusJwtDecoder.withIssuerLocation(oidc.issuerUri()).build();
-			// RFC 9068 access tokens: typ "at+jwt", issuer, audience, expiry and required claims.
-			decoder.setJwtValidator(JwtValidators.createAtJwtValidator()
-				.issuer(oidc.issuerUri())
-				.audience(oidc.audience())
-				.build());
+			OAuth2TokenValidator<Jwt> audience = new JwtClaimValidator<List<String>>("aud",
+					aud -> aud != null && aud.contains(oidc.audience()));
+			decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+					JwtValidators.createDefaultWithIssuer(oidc.issuerUri()), audience));
 			return decoder;
 		});
 	}
 
-	/** Uses the human-readable username as principal and maps the {@code groups} claim to {@code ROLE_*}. */
+	/**
+	 * Uses the human-readable username as principal. Authorization is per organization (membership roles, see
+	 * {@code organization.api.TenantInterceptor}), so tokens carry no authorities.
+	 */
 	private static JwtAuthenticationConverter jwtAuthenticationConverter() {
 		JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
 		converter.setPrincipalClaimName("preferred_username");
-		converter.setJwtGrantedAuthoritiesConverter(jwt -> {
-			List<String> groups = jwt.getClaimAsStringList("groups");
-			return groups == null ? List.<GrantedAuthority>of()
-					: groups.stream().<GrantedAuthority>map(g -> new SimpleGrantedAuthority("ROLE_" + g.toUpperCase())).toList();
-		});
+		converter.setJwtGrantedAuthoritiesConverter(jwt -> List.<GrantedAuthority>of());
 		return converter;
 	}
 
@@ -88,7 +89,7 @@ public class SecurityConfig {
 		CorsConfiguration config = new CorsConfiguration();
 		config.setAllowedOrigins(properties.cors().allowedOrigins());
 		config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-		config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept-Language"));
+		config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept-Language", "X-Artemis-Organization"));
 		config.setMaxAge(3600L);
 		UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
 		source.registerCorsConfiguration("/api/**", config);

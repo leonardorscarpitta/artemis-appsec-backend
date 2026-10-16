@@ -42,40 +42,41 @@ class ReportServiceImpl implements ReportService {
 	}
 
 	@Override
-	public List<ReportSummary> findAll(Locale locale) {
-		Map<UUID, String> names = projectNames();
-		return reports.findAllByOrderByGeneratedAtDesc().stream().map(r -> toSummary(r, names, locale)).toList();
+	public List<ReportSummary> findAll(UUID organizationId, Locale locale) {
+		Map<UUID, String> names = projectNames(organizationId);
+		return reports.findByOrganizationIdOrderByGeneratedAtDesc(organizationId).stream().map(r -> toSummary(r, names, locale)).toList();
 	}
 
 	@Override
-	public ReportDetails get(UUID id, Locale locale) {
-		Report report = reports.findById(id).orElseThrow(() -> new ResourceNotFoundException("Report", id));
-		return new ReportDetails(toSummary(report, projectNames(), locale), toContent(report.getContent(), locale));
+	public ReportDetails get(UUID organizationId, UUID id, Locale locale) {
+		Report report = reports.findByIdAndOrganizationId(id, organizationId)
+			.orElseThrow(() -> new ResourceNotFoundException("Report", id));
+		return new ReportDetails(toSummary(report, projectNames(organizationId), locale), toContent(report.getContent(), locale));
 	}
 
 	@Override
 	@Transactional
-	public ReportSummary request(GenerateReportCommand command, Locale locale) {
+	public ReportSummary request(UUID organizationId, GenerateReportCommand command, Locale locale) {
 		String scope = command.scope() == null || command.scope().isBlank() ? null : command.scope();
-		UUID projectId = scope == null ? null : projectId(scope);
+		UUID projectId = scope == null ? null : projectId(organizationId, scope);
 		LocalDate[] period = command.period().lastCompleteBefore(LocalDate.now(clock));
 		Map<String, String> title = TYPE_TITLES.get(command.type()).entrySet().stream()
 			.collect(Collectors.toMap(Map.Entry::getKey, e -> scope == null ? e.getValue() : e.getValue() + " – " + scope));
-		Report report = reports.save(Report.requested(title, command.type(), projectId, period[0], period[1]));
-		return toSummary(report, projectNames(), locale);
+		Report report = reports.save(Report.requested(organizationId, title, command.type(), projectId, period[0], period[1]));
+		return toSummary(report, projectNames(organizationId), locale);
 	}
 
-	private UUID projectId(String name) {
+	private UUID projectId(UUID organizationId, String name) {
 		try {
-			return projects.getByName(name).project().id();
+			return projects.getByName(organizationId, name).project().id();
 		}
 		catch (ResourceNotFoundException ex) {
 			throw new IllegalArgumentException("Unknown repository '%s'".formatted(name));
 		}
 	}
 
-	private Map<UUID, String> projectNames() {
-		return projects.findAll().stream().collect(Collectors.toMap(ProjectSummary::id, ProjectSummary::name));
+	private Map<UUID, String> projectNames(UUID organizationId) {
+		return projects.findAll(organizationId).stream().collect(Collectors.toMap(ProjectSummary::id, ProjectSummary::name));
 	}
 
 	private static ReportSummary toSummary(Report r, Map<UUID, String> names, Locale locale) {

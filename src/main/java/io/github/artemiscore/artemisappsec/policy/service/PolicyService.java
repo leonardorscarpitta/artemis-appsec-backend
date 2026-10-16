@@ -5,13 +5,13 @@ import java.util.UUID;
 
 public interface PolicyService {
 
-	Policies get();
+	Policies get(UUID organizationId);
 
-	Policies update(Policies policies);
+	Policies update(UUID organizationId, Policies policies);
 
-	List<RiskAcceptanceView> findRiskAcceptances();
+	List<RiskAcceptanceView> findRiskAcceptances(UUID organizationId);
 
-	RiskAcceptanceView acceptRisk(AcceptRiskCommand command, String approvedBy);
+	RiskAcceptanceView acceptRisk(UUID organizationId, AcceptRiskCommand command, String approvedBy);
 
-	void revokeRiskAcceptance(UUID id);
+	void revokeRiskAcceptance(UUID organizationId, UUID id);
 }

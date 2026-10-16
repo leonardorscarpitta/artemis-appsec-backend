@@ -3,6 +3,7 @@ package io.github.artemiscore.artemisappsec.organization.domain;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.UUID;
 
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
@@ -15,21 +16,14 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
 
-/** Settings of the single organization served by this deployment. */
+/** Settings of an organization. Its name and slug live on {@link Organization}. */
 @Entity
 @Table(name = "organization_settings")
 public class OrganizationSettings {
 
-	public static final short SINGLETON_ID = 1;
-
 	@Id
-	private Short id;
-
-	@Column(nullable = false)
-	private String name;
-
-	@Column(nullable = false)
-	private String slug;
+	@Column(name = "organization_id")
+	private UUID organizationId;
 
 	@Column(name = "default_language", nullable = false)
 	private String defaultLanguage;
@@ -67,7 +61,7 @@ public class OrganizationSettings {
 	private RetentionPeriod reportsRetention;
 
 	@ElementCollection(fetch = FetchType.EAGER)
-	@CollectionTable(name = "organization_notification", joinColumns = @JoinColumn(name = "settings_id"))
+	@CollectionTable(name = "organization_notification", joinColumns = @JoinColumn(name = "organization_id"))
 	private Set<NotificationRule> notifications = new HashSet<>();
 
 	@Column(name = "updated_at", nullable = false)
@@ -76,9 +70,21 @@ public class OrganizationSettings {
 	protected OrganizationSettings() {
 	}
 
-	public void updateGeneral(String name, String slug, String defaultLanguage, String timezone) {
-		this.name = name;
-		this.slug = slug;
+	public OrganizationSettings(UUID organizationId, String defaultLanguage, String oidcIssuer, String oidcClientId) {
+		this.organizationId = organizationId;
+		this.defaultLanguage = defaultLanguage;
+		this.timezone = "UTC";
+		this.oidcIssuer = oidcIssuer;
+		this.oidcClientId = oidcClientId;
+		this.sessionTimeout = SessionTimeout.EIGHT_HOURS;
+		this.enforceSso = true;
+		this.findingsRetention = RetentionPeriod.DAYS_730;
+		this.logsRetention = RetentionPeriod.DAYS_90;
+		this.reportsRetention = RetentionPeriod.FOREVER;
+		touch();
+	}
+
+	public void updateGeneral(String defaultLanguage, String timezone) {
 		this.defaultLanguage = defaultLanguage;
 		this.timezone = timezone;
 		touch();
@@ -107,14 +113,6 @@ public class OrganizationSettings {
 
 	private void touch() {
 		updatedAt = Instant.now();
-	}
-
-	public String getName() {
-		return name;
-	}
-
-	public String getSlug() {
-		return slug;
 	}
 
 	public String getDefaultLanguage() {

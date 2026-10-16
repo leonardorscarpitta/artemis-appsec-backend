@@ -8,14 +8,14 @@ import io.github.artemiscore.artemisappsec.shared.domain.Stage;
 /** Public contract of the finding service (vulnerabilities, secrets, code, configuration and license issues). */
 public interface FindingService {
 
-	List<FindingSummary> search(FindingQuery query);
+	List<FindingSummary> search(UUID organizationId, FindingQuery query);
 
-	FindingDetails get(UUID id);
+	FindingDetails get(UUID organizationId, UUID id);
 
-	FindingDetails changeStatus(UUID id, ChangeStatusCommand command);
+	FindingDetails changeStatus(UUID organizationId, UUID id, ChangeStatusCommand command);
 
-	/** Findings that still need attention (open or triaged). */
-	List<FindingSummary> findActive();
+	/** Findings of the organization that still need attention (open or triaged). */
+	List<FindingSummary> findActive(UUID organizationId);
 
 	/**
 	 * Records everything a completed scanner stage reported for a project: new issues are opened, known ones refreshed

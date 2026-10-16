@@ -18,10 +18,16 @@ public class Member {
 	@Id
 	private UUID id;
 
+	@Column(name = "organization_id", nullable = false)
+	private UUID organizationId;
+
+	@Column(name = "user_subject")
+	private String userSubject;
+
 	@Column(nullable = false)
 	private String name;
 
-	@Column(nullable = false, unique = true)
+	@Column(nullable = false)
 	private String email;
 
 	@Enumerated(EnumType.STRING)
@@ -40,6 +46,47 @@ public class Member {
 	protected Member() {
 	}
 
+	public Member(UUID organizationId, String userSubject, String name, String email, Role role) {
+		this.id = UUID.randomUUID();
+		this.organizationId = organizationId;
+		this.userSubject = userSubject;
+		this.name = name;
+		this.email = email;
+		this.role = role;
+		this.active = true;
+		this.createdAt = Instant.now();
+		this.lastActiveAt = createdAt;
+	}
+
+	/** Links the member to the identity provider account that signed in with the member's verified e-mail. */
+	public void bind(String subject, String displayName) {
+		this.userSubject = subject;
+		if (displayName != null && !displayName.isBlank()) {
+			this.name = displayName.strip();
+		}
+	}
+
+	public void seen(Instant now) {
+		if (lastActiveAt == null || lastActiveAt.isBefore(now.minusSeconds(60))) {
+			lastActiveAt = now;
+		}
+	}
+
+	/** Re-admits a former member through a new invitation. */
+	public void rejoin(String subject, Role role) {
+		this.userSubject = subject;
+		this.role = role;
+		this.active = true;
+	}
+
+	public void becomeOwner() {
+		this.role = Role.OWNER;
+	}
+
+	public void stepDownAsOwner() {
+		this.role = Role.ADMIN;
+	}
+
 	/** Ownership is transferred through a dedicated flow, never assigned from the role picker. */
 	public void changeRole(Role newRole) {
 		if (role == Role.OWNER) {
@@ -53,6 +100,14 @@ public class Member {
 
 	public UUID getId() {
 		return id;
+	}
+
+	public UUID getOrganizationId() {
+		return organizationId;
+	}
+
+	public String getUserSubject() {
+		return userSubject;
 	}
 
 	public String getName() {

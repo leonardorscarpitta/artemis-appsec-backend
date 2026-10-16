@@ -25,9 +25,9 @@ Backend of Artemis, a SAST platform. The frontend lives in the [artemis-appsec-f
 Everything runs in Docker:
 
 ```sh
-cp .env.example .env             # first time only; adjust values
-./authelia/generate-secrets.sh   # first time only; prints the development logins
+cp .env.example .env             # first time only; set passwords and SCANNER_TOKEN
 docker compose up -d
+./keycloak/create-dev-users.sh   # first time only (once Keycloak is up); prints the development logins
 ```
 
 | Service | URL |
@@ -35,32 +35,68 @@ docker compose up -d
 | API | http://localhost:8080/api/v1 |
 | OpenAPI / Swagger UI | http://localhost:8080/api/docs/ui |
 | Health | http://localhost:8080/actuator/health |
-| Authelia (sign-in, OIDC provider) | https://auth.artemisappsec.localhost:9443 |
+| Keycloak (sign-in, registration, account) | https://auth.artemisappsec.localhost:9443/realms/artemisappsec/account |
+| Keycloak admin console | https://auth.artemisappsec.localhost:9443/admin (`KEYCLOAK_ADMIN_*` in `.env`) |
+| Mailpit (dev e-mails) | http://localhost:8025 |
 | Remote debugger (JDWP) | `localhost:5005` |
 | PostgreSQL | `localhost:5432` |
 
 The `api` container runs `mvn spring-boot:run` with the `dev` profile. Maven compiles once at startup, so after changing code run `docker compose restart api` (DevTools also restarts the app when an IDE recompiles classes into `target/`). Dependencies are cached in `.m2/` (git-ignored).
 
-The `dev` profile loads demo data (`src/main/resources/db/seed`). Set `AUTH_ENABLED=false` in `.env` to skip authentication entirely (local debugging only).
+The `dev` profile loads demo data (`src/main/resources/db/seed`): the **Acme Corp** organization (slug `acme`) whose members `ana.souza@acme.example` (owner), `carla.mendes@…` (analyst) and `daniel.rocha@…` (developer) match the Keycloak dev users and are linked on their first sign-in. Set `AUTH_ENABLED=false` in `.env` to skip authentication entirely (local debugging only: every request then acts as owner of the organization in the header).
+
+**Resetting the dev database.** The seeds are rewritten when the schema changes in ways they depend on (e.g. multi-tenancy), so an existing dev database may fail Flyway validation. Reset only the **application** database (never the `keycloak` one, which holds the dev users):
+
+```sh
+docker compose stop api
+docker compose exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "DROP SCHEMA public CASCADE" -c "CREATE SCHEMA public"'
+docker compose start api
+```
 
 Production image: `docker build -t artemisappsec-api .` (multi-stage, non-root, layered jar).
 
-**Memory limits** (the stack is sized for a 16 GB machine, ~4.5 GB in total): `db` 512 MB, `api` 1.5 GB (Maven `-Xmx384m`, application JVM `-Xmx640m -XX:+UseSerialGC`), `authelia` 384 MB (argon2 password checks use ~64 MB each), `auth-proxy` 64 MB, `scanner` 2 GB (+ 2 CPUs, 512 processes).
+**Memory limits** (the stack is sized for a 16 GB machine, ~4.5 GB in total): `db` 512 MB, `api` 1.5 GB (Maven `-Xmx384m`, application JVM `-Xmx640m -XX:+UseSerialGC`), `keycloak` 768 MB, `mailpit` 64 MB, `auth-proxy` 64 MB, `scanner` 2 GB (+ 2 CPUs, 512 processes).
 
-## Authentication (Authelia)
+## Authentication (Keycloak)
 
-Authelia is the OpenID Connect provider; the API is an OAuth2 resource server.
+Keycloak 26.4 is the OpenID Connect provider (realm `artemisappsec`, imported from `keycloak/realm-artemisappsec.json` on first start); the API is an OAuth2 resource server.
 
 ```
-browser ──https──> Caddy :9443 (auth-proxy) ──> Authelia :9091
-API ──http──> auth-proxy:9080/jwks.json   (internal only, signing keys)
+browser ──https──> Caddy :9443 (auth-proxy) ──> Keycloak :8080
+API ──http──> keycloak:8080/realms/artemisappsec/protocol/openid-connect/certs   (internal, signing keys)
 ```
 
-- **Why Caddy:** Authelia refuses non-HTTPS public URLs. Caddy terminates TLS with its local CA. `*.localhost` resolves to your machine in browsers, so no hosts-file changes are needed. The first visit to https://auth.artemisappsec.localhost:9443 shows a certificate warning; accept it, or trust Caddy's root CA (`docker compose cp auth-proxy:/data/caddy/pki/authorities/local/root.crt .`).
-- **Client:** `artemisappsec-web` is a public client using Authorization Code + PKCE (S256). Access tokens are RFC 9068 JWTs (`typ: at+jwt`) with audience `artemisappsec-api` and the claims `preferred_username`, `name`, `email` and `groups`.
-- **API validation:** issuer, audience, expiry and token type are checked with `JwtValidators.createAtJwtValidator()`. The principal name is `preferred_username`, and `groups` become `ROLE_<GROUP>` authorities (not enforced yet).
-- **Secrets:** `authelia/generate-secrets.sh` creates them in `authelia/secrets/` (git-ignored): session and storage keys, the HMAC secret, the RSA signing key and `users.yml`. Development users (`ana.souza` owner, `carla.mendes` analyst, `daniel.rocha` developer) get random passwords, listed in `authelia/secrets/dev-credentials.txt`. In production these files come from the secret store.
-- `GET /api/v1/me` returns the signed-in user.
+- **TLS:** Caddy terminates HTTPS with its local CA at `https://auth.artemisappsec.localhost:9443` (`*.localhost` resolves to your machine). Trust Caddy's root CA once (`docker compose cp auth-proxy:/data/caddy/pki/authorities/local/root.crt .`) or accept the warning. Keycloak runs with `--proxy-headers=xforwarded` and a fixed public `--hostname`.
+- **Realm:** self-registration with e-mail verification, Terms of Use / Privacy Policy acceptance on first sign-in (required action with links to the app), password policy (12–128 chars, not username/e-mail, history 3), brute-force protection, en/pt-BR, reset password, account deletion, Organizations enabled. Dev e-mails go to **Mailpit** (http://localhost:8025); set `KC_SMTP_*` for a real server.
+- **Client:** `artemisappsec-web`, public, Authorization Code + PKCE (S256), redirect `ARTEMISAPPSEC_WEB_ORIGIN/auth/callback`, post-logout redirect to the app, audience mapper adding `artemisappsec-api` to access tokens. `prompt=create` opens the registration page.
+- **API validation:** issuer, expiry and audience (`artemisappsec-api`); principal = `preferred_username`. Tokens carry no roles: authorization is per organization (below).
+- **Database:** Keycloak uses its own database/role (`keycloak`) in the same PostgreSQL instance, created idempotently by the `keycloak-db-init` job (`KEYCLOAK_DB_PASSWORD`).
+- **Dev users:** `./keycloak/create-dev-users.sh` creates `ana.souza`, `carla.mendes`, `daniel.rocha` (verified e-mail, random passwords) and writes `keycloak/secrets/dev-credentials.txt` (git-ignored).
+- `GET /api/v1/me` returns the signed-in user (`username`, `name`, `email`, `emailVerified`).
+
+## Organizations and permissions
+
+Artemis is multi-tenant: every repository, finding, run, report, policy, integration, key, token, member, invitation, setting and subscription belongs to an **organization**. Tenancy and roles live in Artemis (not in Keycloak).
+
+- **Tenant header:** every organization-scoped request carries `X-Artemis-Organization: <slug>` (the frontend sends the slug of its `/<slug>/…` URL). Missing header → `400` `organization-required`; unknown slug, not a member or inactive member → `404` `organization-not-found` (existence is not revealed); missing permission → `403` `forbidden` with `permission`. Endpoints without the header: `/me`, `/me/**`, `POST /organizations`, `/roles`, `/pipeline/stages`, `/billing/plans`.
+- **Membership:** a member is linked to the Keycloak account by `sub`. Members created before the account existed (invitations, seeds) are linked on first use when the token's **verified** e-mail matches.
+- **Roles → permissions** (`organization/domain/Role.java`):
+
+  | Role | viewFindings | triage | pipelines | integrations | team | billing |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | owner | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+  | admin | ✓ | ✓ | ✓ | ✓ | ✓ | |
+  | analyst | ✓ | ✓ | ✓ | | | |
+  | developer | ✓ | ✓ | | | | |
+  | viewer | ✓ | | | | | |
+
+  `viewFindings`: every `GET`. `triage`: finding status, risk acceptances, reports. `pipelines`: create/configure repositories and pipelines, run/re-run/cancel scans, edit policies. `integrations`: integrations, deploy keys, API tokens. `team`: invitations, roles, removing members, organization settings. `billing` (owner): plan changes, ownership transfer, deleting the organization.
+- **Enforcement:** `organization/api/TenantInterceptor` resolves the tenant for every `/api/v1/**` handler (unless annotated `@WithoutOrganization`) and checks `@RequiresPermission`; `GET` defaults to `viewFindings` and any other method **without** the annotation is refused (fail closed). Controllers receive a `Tenant` parameter and pass `tenant.organizationId()` to services; every query is filtered by organization (directly or through its repositories), so ids/numbers from another organization return `404`.
+- **Rules:** one owner per organization; ownership is transferred (`POST /members/transfer-ownership`, the old owner becomes admin), never assigned; nobody changes their own role or removes themselves (they leave); the owner cannot leave. A user may own at most 5 organizations; creating one requires a verified e-mail.
+- **Account endpoints:** `GET /me/organizations` (`[{slug, name, role, permissions, plan}]`), `POST /organizations` (`{name, slug, defaultLanguage?}` → the creator becomes owner; FREE plan, default settings, integration catalogue and policies are provisioned), `GET /me/invitations` (pending, non-expired invitations for the verified e-mail), `POST /me/invitations/{id}/accept|decline`, `POST /me/organizations/{slug}/leave`.
+- **Slugs:** `^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$`, unique (`409 slug-taken`), not an app route (`409 slug-reserved`: `organizations`, `auth`, `login`, `help`, `privacy`, `terms`, `api`, …). Renaming the slug in the settings changes the organization's URLs.
+- **Invitations** expire after 7 days (resend renews them). They are **not e-mailed** yet: the invitee sees them after signing in or registering with that address.
+- Deleting an organization (`DELETE /organization`, owner) removes everything in it (database `ON DELETE CASCADE`).
 
 ## Configuration
 
@@ -73,7 +109,9 @@ All environment-specific values come from environment variables (secrets in prod
 | `OIDC_JWK_SET_URI` | Optional URL of the signing keys (internal URL in Docker) |
 | `OIDC_AUDIENCE` | Required `aud` claim (default `artemisappsec-api`) |
 | `AUTH_ENABLED` | `dev` profile only: `false` disables authentication |
-| `AUTH_COOKIE_DOMAIN`, `AUTH_PUBLIC_URL`, `ARTEMISAPPSEC_WEB_ORIGIN`, `ARTEMISAPPSEC_WEB_REDIRECT_URI` | Authelia session domain, public URL, the frontend origin (CORS) and callback URL |
+| `AUTH_PUBLIC_URL`, `ARTEMISAPPSEC_WEB_ORIGIN` | Keycloak public URL (`--hostname`) and the frontend origin (redirect/CORS in the realm) |
+| `KEYCLOAK_ADMIN_USERNAME`, `KEYCLOAK_ADMIN_PASSWORD`, `KEYCLOAK_DB_PASSWORD` | Keycloak bootstrap admin and database credentials |
+| `KC_SMTP_HOST`, `KC_SMTP_PORT`, `KC_SMTP_FROM` | Outgoing e-mail for verification/reset (Mailpit by default) |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated origins allowed to call `/api/**` |
 | `SCANNER_TOKEN` | Shared secret of the scanner runner (≥ 32 random characters; the internal job API is disabled otherwise). Also `SCANNER_STAGE_TIMEOUT_SECONDS` (600), `SCANNER_MAX_REPO_SIZE_MB` (500), `SCANNER_STALE_RUN_MINUTES` (60) |
 | `BILLING_ENABLED` | Allows plan changes (default `false`). Paid plans still require a payment platform, which is not integrated yet |
@@ -108,8 +146,8 @@ Rules:
 | `report` | Security summary and OWASP compliance reports; text localized by `Accept-Language` (en-US, pt-BR). Requested reports stay `generating` until a report generator exists | `/api/v1/reports` |
 | `policy` | Organization-wide stage gates (fail threshold, required), remediation SLAs, license allow/deny lists, risk acceptances | `/api/v1/policies`, `/api/v1/risk-acceptances` |
 | `account` | The signed-in user from the JWT | `/api/v1/me` |
-| `billing` | Plans (FREE: 90 scans/month; PRO: R$ 24,99/month, 300 scans/month and AI triage), the organization's subscription, monthly scan usage (`ScanUsage` port, implemented by `pipelinerun`) and entitlements. Re-runs are refused once the month's limit is reached. Plan changes are disabled by default and no payment platform is integrated | `/api/v1/billing`, `/api/v1/billing/plans` (public) |
-| `organization` | Integrations, SSH deploy keys, team (members, invitations, roles), organization settings, API tokens | `/api/v1/integrations`, `/api/v1/deploy-keys`, `/api/v1/members`, `/api/v1/invitations`, `/api/v1/roles`, `/api/v1/organization`, `/api/v1/api-tokens` |
+| `billing` | Plans (FREE: 90 scans/month; PRO: R$ 24,99/month, 300 scans/month and AI triage), each organization's subscription, monthly scan usage per organization (`ScanUsage` port, implemented by `pipelinerun`) and entitlements. Re-runs are refused once the month's limit is reached. Plan changes are disabled by default and no payment platform is integrated | `/api/v1/billing`, `/api/v1/billing/plans` (public) |
+| `organization` | Organizations (tenancy, memberships, creation, invitations for the signed-in account, permission enforcement), integrations, SSH deploy keys, team (members, invitations, roles, ownership), organization settings, API tokens. Publishes `OrganizationCreated` (billing and policy provision their defaults) and reads plans through the `PlanLookup` port (implemented by `billing`) | `/api/v1/organizations`, `/api/v1/me/organizations`, `/api/v1/me/invitations`, `/api/v1/integrations`, `/api/v1/deploy-keys`, `/api/v1/members`, `/api/v1/invitations`, `/api/v1/roles`, `/api/v1/organization`, `/api/v1/api-tokens` |
 
 Query parameters accept the same enum values as the JSON (`?status=falsePositive&severity=critical`), via `shared/config/WireEnumConverterFactory`.
 
@@ -118,7 +156,6 @@ Security notes for `organization`:
 - Deploy keys accept **public keys only** (private keys are rejected); the type and key data are validated (ed25519, ECDSA, RSA ≥ 2048 bits) and the OpenSSH `SHA256:` fingerprint is computed server-side.
 - API tokens (`art_…`) are generated with `SecureRandom` and returned **once**; only their SHA-256 hash and last four characters are stored.
 - The OIDC client secret is never stored or returned — it belongs in the deployment's secret store; the API only reports whether it is configured.
-- The organization is a single row (`organization_settings`): one organization per deployment.
 
 JSON enum values match the frontend (`"Java + Spring"`, `"24h"`, `"sast"`, `"critical"`...).
 
@@ -143,7 +180,7 @@ Licensing (see `scanner/THIRD_PARTY_NOTICES.md`, shipped in the image with every
 **Security and privacy measures**
 
 - *Supply chain:* pinned tool versions; every download verified against a pinned SHA-256 (cross-checked with the official checksum files where published); multi-stage build, no build tools in the final image.
-- *Sandbox:* non-root user (uid 10001), read-only root filesystem, all Linux capabilities dropped, `no-new-privileges`, memory/CPU/process limits, no Docker socket, no database credentials. The `scanner` network is shared only with the API — the database and Authelia are unreachable.
+- *Sandbox:* non-root user (uid 10001), read-only root filesystem, all Linux capabilities dropped, `no-new-privileges`, memory/CPU/process limits, no Docker socket, no database credentials. The `scanner` network is shared only with the API — the database and Keycloak are unreachable.
 - *Clone:* public **HTTPS** repositories only for now (SSH/private repositories come later); credentials in URLs, non-default ports and hosts resolving to private, loopback, link-local or metadata addresses are refused; `--depth 1 --single-branch --no-tags`, no submodules, hooks, LFS, symlinks or redirects; size limit (500 MB) and timeouts. No repository code is ever executed (no installs, no builds).
 - *Privacy:* source code lives in an in-memory workspace that is deleted after each run (and on start-up). Secrets are redacted by Gitleaks and the worker never forwards secret values or code snippets — only rule, file and line. Logs are size-limited and redacted. Telemetry and update checks are disabled (`--metrics=off`, `*_CHECK_FOR_APP_UPDATE=false`); the only outbound traffic is the git clone and vulnerability-database downloads, which contain no user data.
 

@@ -6,6 +6,7 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.Arrays;
 import java.util.List;
+import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,17 +34,17 @@ class BillingServiceImpl implements BillingService {
 	}
 
 	@Override
-	public BillingOverview overview() {
-		return toOverview(current());
+	public BillingOverview overview(UUID organizationId) {
+		return toOverview(current(organizationId));
 	}
 
 	@Override
 	@Transactional
-	public BillingOverview changePlan(ChangePlanCommand command) {
+	public BillingOverview changePlan(UUID organizationId, ChangePlanCommand command) {
 		if (!enabled) {
 			throw new BusinessRuleException("Billing is not available yet");
 		}
-		Subscription subscription = current();
+		Subscription subscription = current(organizationId);
 		if (subscription.getPlan() == command.plan()) {
 			throw new BusinessRuleException("The organization is already on the %s plan".formatted(command.plan().name()));
 		}
@@ -61,20 +62,21 @@ class BillingServiceImpl implements BillingService {
 	}
 
 	@Override
-	public void assertCanScan() {
-		int limit = current().getPlan().monthlyScanLimit();
-		if (usage.scansSince(periodStart()) >= limit) {
+	public void assertCanScan(UUID organizationId) {
+		int limit = current(organizationId).getPlan().monthlyScanLimit();
+		if (usage.scansSince(organizationId, periodStart()) >= limit) {
 			throw new BusinessRuleException("Monthly scan limit reached (%d scans on the current plan)".formatted(limit));
 		}
 	}
 
 	@Override
-	public boolean isEntitled(Feature feature) {
-		return current().getPlan().features().contains(feature);
+	public boolean isEntitled(UUID organizationId, Feature feature) {
+		return current(organizationId).getPlan().features().contains(feature);
 	}
 
-	private Subscription current() {
-		return subscriptions.findById(Subscription.SINGLETON_ID).orElseThrow();
+	private Subscription current(UUID organizationId) {
+		return subscriptions.findById(organizationId)
+			.orElseThrow(() -> new IllegalStateException("Organization %s has no subscription".formatted(organizationId)));
 	}
 
 	private Instant periodStart() {
@@ -83,7 +85,7 @@ class BillingServiceImpl implements BillingService {
 
 	private BillingOverview toOverview(Subscription subscription) {
 		Instant start = periodStart();
-		UsageView usageView = new UsageView(usage.scansSince(start), subscription.getPlan().monthlyScanLimit(), start);
+		UsageView usageView = new UsageView(usage.scansSince(subscription.getOrganizationId(), start), subscription.getPlan().monthlyScanLimit(), start);
 		return new BillingOverview(enabled, subscription.getPlan(), subscription.getStartedAt(), plans(),
 				subscription.getPlan().features().stream().sorted().toList(), usageView);
 	}

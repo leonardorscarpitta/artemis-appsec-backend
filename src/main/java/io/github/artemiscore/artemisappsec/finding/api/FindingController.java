@@ -18,6 +18,9 @@ import io.github.artemiscore.artemisappsec.finding.service.FindingDetails;
 import io.github.artemiscore.artemisappsec.finding.service.FindingQuery;
 import io.github.artemiscore.artemisappsec.finding.service.FindingService;
 import io.github.artemiscore.artemisappsec.finding.service.FindingSummary;
+import io.github.artemiscore.artemisappsec.organization.api.RequiresPermission;
+import io.github.artemiscore.artemisappsec.organization.domain.Permission;
+import io.github.artemiscore.artemisappsec.organization.service.Tenant;
 import io.github.artemiscore.artemisappsec.shared.domain.Severity;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -35,7 +38,7 @@ class FindingController {
 	}
 
 	@GetMapping
-	List<FindingSummary> search(@RequestParam(required = false) @Size(max = 200) String q,
+	List<FindingSummary> search(Tenant tenant, @RequestParam(required = false) @Size(max = 200) String q,
 			@RequestParam(required = false) FindingKind kind,
 			@RequestParam(required = false) Severity severity, @RequestParam(required = false) FindingStatus status,
 			@RequestParam(required = false) @Size(max = 255) String repository,
@@ -50,16 +53,17 @@ class FindingController {
 			case "desc" -> false;
 			default -> throw new IllegalArgumentException("dir must be 'asc' or 'desc'");
 		};
-		return findings.search(new FindingQuery(q, kind, severity, status, repository, field, ascending));
+		return findings.search(tenant.organizationId(), new FindingQuery(q, kind, severity, status, repository, field, ascending));
 	}
 
 	@GetMapping("/{id}")
-	FindingDetails get(@PathVariable UUID id) {
-		return findings.get(id);
+	FindingDetails get(Tenant tenant, @PathVariable UUID id) {
+		return findings.get(tenant.organizationId(), id);
 	}
 
 	@PostMapping("/{id}/status")
-	FindingDetails changeStatus(@PathVariable UUID id, @Valid @RequestBody ChangeStatusCommand command) {
-		return findings.changeStatus(id, command);
+	@RequiresPermission(Permission.TRIAGE)
+	FindingDetails changeStatus(Tenant tenant, @PathVariable UUID id, @Valid @RequestBody ChangeStatusCommand command) {
+		return findings.changeStatus(tenant.organizationId(), id, command);
 	}
 }

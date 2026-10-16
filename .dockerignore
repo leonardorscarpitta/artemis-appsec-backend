@@ -4,5 +4,5 @@ target/
 .idea/
 .vscode/
 .m2/
-authelia/secrets/
+keycloak/secrets/
 scanner/

@@ -1,5 +1,6 @@
 package io.github.artemiscore.artemisappsec.organization.persistence;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -9,7 +10,7 @@ import io.github.artemiscore.artemisappsec.organization.domain.DeployKey;
 
 public interface DeployKeyRepository extends JpaRepository<DeployKey, UUID> {
 
-	List<DeployKey> findAllByOrderByCreatedAtAsc();
+	List<DeployKey> findByProjectIdInOrderByCreatedAtAsc(Collection<UUID> projectIds);
 
 	boolean existsByProjectIdAndFingerprint(UUID projectId, String fingerprint);
 }

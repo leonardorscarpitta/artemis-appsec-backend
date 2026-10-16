@@ -10,8 +10,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import io.github.artemiscore.artemisappsec.organization.domain.Permission;
 import io.github.artemiscore.artemisappsec.organization.service.IntegrationService;
 import io.github.artemiscore.artemisappsec.organization.service.IntegrationView;
+import io.github.artemiscore.artemisappsec.organization.service.Tenant;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
@@ -31,22 +33,26 @@ class IntegrationController {
 	}
 
 	@GetMapping
-	List<IntegrationView> list() {
-		return integrations.findAll();
+	List<IntegrationView> list(Tenant tenant) {
+		return integrations.findAll(tenant.organizationId());
 	}
 
 	@PostMapping("/{id}/connect")
-	IntegrationView connect(@PathVariable String id) {
-		return integrations.connect(id);
+	@RequiresPermission(Permission.INTEGRATIONS)
+	IntegrationView connect(Tenant tenant, @PathVariable String id) {
+		return integrations.connect(tenant.organizationId(), id);
 	}
 
 	@PostMapping("/{id}/disconnect")
-	IntegrationView disconnect(@PathVariable String id) {
-		return integrations.disconnect(id);
+	@RequiresPermission(Permission.INTEGRATIONS)
+	IntegrationView disconnect(Tenant tenant, @PathVariable String id) {
+		return integrations.disconnect(tenant.organizationId(), id);
 	}
 
 	@PutMapping("/{id}")
-	IntegrationView configure(@PathVariable String id, @Valid @RequestBody ConfigureIntegrationRequest request) {
-		return integrations.configure(id, request.detail());
+	@RequiresPermission(Permission.INTEGRATIONS)
+	IntegrationView configure(Tenant tenant, @PathVariable String id,
+			@Valid @RequestBody ConfigureIntegrationRequest request) {
+		return integrations.configure(tenant.organizationId(), id, request.detail());
 	}
 }
