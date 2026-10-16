@@ -1,11 +1,9 @@
-# syntax=docker/dockerfile:1
-
 FROM maven:3.9-eclipse-temurin-25 AS build
 WORKDIR /workspace
 COPY pom.xml .
-RUN --mount=type=cache,target=/root/.m2 mvn -B -q dependency:go-offline
+RUN mvn -B -q dependency:go-offline
 COPY src ./src
-RUN --mount=type=cache,target=/root/.m2 mvn -B -q package -DskipTests \
+RUN mvn -B -q -o package -DskipTests \
     && java -Djarmode=tools -jar target/artemis-*.jar extract --layers --launcher --destination target/extracted
 
 FROM eclipse-temurin:25-jre-alpine
