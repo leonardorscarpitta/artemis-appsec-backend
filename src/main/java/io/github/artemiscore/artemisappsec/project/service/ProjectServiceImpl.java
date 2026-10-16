@@ -1,5 +1,6 @@
 package io.github.artemiscore.artemisappsec.project.service;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
@@ -9,14 +10,20 @@ import java.util.UUID;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.github.artemiscore.artemisappsec.project.domain.AccessCheck;
+import io.github.artemiscore.artemisappsec.project.domain.AccessCheckStatus;
+import io.github.artemiscore.artemisappsec.project.domain.AccessStatus;
 import io.github.artemiscore.artemisappsec.project.domain.Folder;
 import io.github.artemiscore.artemisappsec.project.domain.PipelineStageConfig;
 import io.github.artemiscore.artemisappsec.project.domain.Project;
+import io.github.artemiscore.artemisappsec.project.persistence.AccessCheckRepository;
 import io.github.artemiscore.artemisappsec.project.persistence.ProjectRepository;
 import io.github.artemiscore.artemisappsec.shared.domain.Stage;
+import io.github.artemiscore.artemisappsec.shared.error.ApiProblemException;
 import io.github.artemiscore.artemisappsec.shared.error.BusinessRuleException;
 import io.github.artemiscore.artemisappsec.shared.error.ResourceNotFoundException;
 
@@ -24,15 +31,21 @@ import io.github.artemiscore.artemisappsec.shared.error.ResourceNotFoundExceptio
 @Transactional(readOnly = true)
 class ProjectServiceImpl implements ProjectService {
 
+	private static final List<AccessCheckStatus> ACTIVE_CHECKS = List.of(AccessCheckStatus.QUEUED, AccessCheckStatus.RUNNING);
+
 	private final ProjectRepository projects;
 	private final ObjectProvider<ProjectFindingStats> findingStats;
 	private final ApplicationEventPublisher events;
+	private final AccessCheckRepository checks;
+	private final RepositoryKeys keys;
 
 	ProjectServiceImpl(ProjectRepository projects, ObjectProvider<ProjectFindingStats> findingStats,
-			ApplicationEventPublisher events) {
+			ApplicationEventPublisher events, AccessCheckRepository checks, RepositoryKeys keys) {
 		this.projects = projects;
 		this.findingStats = findingStats;
 		this.events = events;
+		this.checks = checks;
+		this.keys = keys;
 	}
 
 	@Override
@@ -59,11 +72,21 @@ class ProjectServiceImpl implements ProjectService {
 		if (projects.existsByOrganizationIdAndName(organizationId, name)) {
 			throw new BusinessRuleException("A repository named '%s' is already connected".formatted(name));
 		}
+		boolean privateRepository = Project.isPrivateUrl(command.url());
+		if (privateRepository && GitHost.of(command.url()).isEmpty()) {
+			throw new IllegalArgumentException("Use an SSH URL such as git@github.com:owner/repo.git or ssh://git@host/owner/repo.git");
+		}
+		if (privateRepository && !keys.enabled()) {
+			throw deployKeysDisabled();
+		}
 		Project project = new Project(organizationId, name, command.url(), command.branch(), command.stack());
 		applySettings(project, command.settings());
 		applyPipeline(project, command.pipeline());
 		Project saved = projects.save(project);
-		events.publishEvent(new ProjectCreated(saved.getId(), organizationId, saved.getName(), actor));
+		if (privateRepository) {
+			keys.generate(saved.getId(), saved.getName());
+		}
+		events.publishEvent(new ProjectCreated(saved.getId(), organizationId, saved.getName(), actor, privateRepository));
 		return toDetails(saved);
 	}
 
@@ -71,6 +94,125 @@ class ProjectServiceImpl implements ProjectService {
 	@Transactional
 	public void recordScan(UUID projectId, Instant finishedAt) {
 		projects.findById(projectId).ifPresent(p -> p.recordScan(finishedAt));
+	}
+
+	@Override
+	public RepositoryAccess access(UUID organizationId, String name) {
+		return toAccess(load(organizationId, name));
+	}
+
+	@Override
+	@Transactional
+	public RepositoryAccess rotateKey(UUID organizationId, String name) {
+		Project project = loadPrivate(organizationId, name);
+		if (!keys.enabled()) {
+			throw deployKeysDisabled();
+		}
+		keys.generate(project.getId(), project.getName());
+		project.updateAccess(AccessStatus.PENDING);
+		return toAccess(project);
+	}
+
+	@Override
+	@Transactional
+	public RepositoryAccess requestAccessCheck(UUID organizationId, String name) {
+		Project project = loadPrivate(organizationId, name);
+		if (keys.find(project.getId()).isEmpty()) {
+			throw new BusinessRuleException("'%s' has no deploy key; generate one first".formatted(project.getName()));
+		}
+		if (checks.findFirstByProjectIdAndStatusIn(project.getId(), ACTIVE_CHECKS).isEmpty()) {
+			checks.save(new AccessCheck(project.getId()));
+		}
+		return toAccess(project);
+	}
+
+	@Override
+	@Transactional
+	public Optional<AccessCheckJob> claimAccessCheck() {
+		return checks.lockNextQueued().map(check -> {
+			check.start();
+			Project project = projects.findById(check.getProjectId()).orElseThrow();
+			return new AccessCheckJob(check.getId(), project.getId(), project.getName(), project.getSshUrl(),
+					project.getBranch());
+		});
+	}
+
+	@Override
+	@Transactional
+	public void completeAccessCheck(UUID checkId, boolean ok, String message, String hostKey) {
+		AccessCheck check = checks.findById(checkId).orElseThrow(() -> new ResourceNotFoundException("Access check", checkId));
+		if (!check.isActive()) {
+			throw new BusinessRuleException("Access check %s is already finished".formatted(checkId));
+		}
+		check.finish(ok, message);
+		projects.findById(check.getProjectId()).ifPresent(project -> {
+			project.updateAccess(ok ? AccessStatus.VERIFIED : AccessStatus.FAILED);
+			GitHost host = GitHost.of(project.getSshUrl()).orElse(null);
+			if (ok && host != null && !host.pinned()) {
+				host.sanitizeKnownHosts(hostKey).ifPresent(project::recordHostKeyIfAbsent);
+			}
+		});
+	}
+
+	@Override
+	@Transactional
+	public int failStaleAccessChecks(Duration maxDuration) {
+		List<AccessCheck> stale = checks.findByStatusAndStartedAtBefore(AccessCheckStatus.RUNNING,
+				Instant.now().minus(maxDuration));
+		stale.forEach(check -> {
+			check.finish(false, "The scanner did not finish the access check in time.");
+			projects.findById(check.getProjectId()).ifPresent(p -> p.updateAccess(AccessStatus.FAILED));
+		});
+		return stale.size();
+	}
+
+	@Override
+	@Transactional
+	public Optional<SshCredentials> sshCredentials(UUID projectId, String purpose) {
+		return projects.findById(projectId)
+			.filter(Project::isPrivate)
+			.flatMap(project -> keys.releasePrivateKey(projectId, purpose)
+				.map(privateKey -> new SshCredentials(privateKey, project.getSshKnownHost())));
+	}
+
+	@Override
+	public boolean hostKeyKnown(UUID projectId) {
+		return projects.findById(projectId)
+			.map(p -> p.getSshKnownHost() != null || GitHost.of(p.getSshUrl()).map(GitHost::pinned).orElse(false))
+			.orElse(false);
+	}
+
+	@Override
+	@Transactional
+	public void resetAccess(UUID projectId) {
+		projects.findById(projectId).ifPresent(p -> p.updateAccess(AccessStatus.PENDING));
+	}
+
+	private Project loadPrivate(UUID organizationId, String name) {
+		Project project = load(organizationId, name);
+		if (!project.isPrivate()) {
+			throw new BusinessRuleException("'%s' is a public repository; it needs no deploy key".formatted(name));
+		}
+		return project;
+	}
+
+	private RepositoryAccess toAccess(Project project) {
+		if (!project.isPrivate()) {
+			return RepositoryAccess.publicRepository();
+		}
+		GitHost host = GitHost.of(project.getSshUrl()).orElse(null);
+		boolean pinned = host != null && host.pinned();
+		String fingerprint = !pinned && project.getSshKnownHost() != null ? GitHost.fingerprint(project.getSshKnownHost()) : null;
+		AccessCheckView lastCheck = checks.findFirstByProjectIdOrderByRequestedAtDesc(project.getId())
+			.map(c -> new AccessCheckView(c.getId(), c.getStatus(), c.getMessage(), c.getRequestedAt(), c.getFinishedAt()))
+			.orElse(null);
+		return new RepositoryAccess("ssh", keys.find(project.getId()).orElse(null), host == null ? null : host.host(),
+				fingerprint, pinned, lastCheck);
+	}
+
+	private static ApiProblemException deployKeysDisabled() {
+		return new ApiProblemException(HttpStatus.SERVICE_UNAVAILABLE, "deploy-keys-disabled",
+				"Private repositories are not configured on this server");
 	}
 
 	@Override
@@ -131,7 +273,7 @@ class ProjectServiceImpl implements ProjectService {
 
 	private static ProjectSummary toSummary(Project p, Map<UUID, Long> openFindings) {
 		Long open = openFindings == null ? null : openFindings.getOrDefault(p.getId(), 0L);
-		return new ProjectSummary(p.getId(), p.getOrganizationId(), p.getName(), p.getSshUrl(), p.getBranch(), p.getStack(), folders(p), p.getContainerImage(), p.getScanSchedule(),
+		return new ProjectSummary(p.getId(), p.getOrganizationId(), p.getName(), p.getSshUrl(), p.getBranch(), p.getStack(), folders(p), p.getContainerImage(), p.isPrivate() ? "ssh" : "public", p.getAccessStatus(), p.getScanSchedule(),
 				p.getLastScanAt(), open);
 	}
 

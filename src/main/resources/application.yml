@@ -53,3 +53,6 @@ artemisappsec:
     stage-timeout-seconds: ${SCANNER_STAGE_TIMEOUT_SECONDS:600}
     max-repo-size-mb: ${SCANNER_MAX_REPO_SIZE_MB:500}
     stale-run-minutes: ${SCANNER_STALE_RUN_MINUTES:60}
+  deploy-keys:
+    encryption-key: ${DEPLOY_KEY_ENCRYPTION_KEY:}
+    encryption-key-id: ${DEPLOY_KEY_ENCRYPTION_KEY_ID:v1}

@@ -5,7 +5,21 @@ import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "artemisappsec")
-public record ArtemisAppSecProperties(Security security, Cors cors, Billing billing, Scanner scanner) {
+public record ArtemisAppSecProperties(Security security, Cors cors, Billing billing, Scanner scanner, DeployKeys deployKeys) {
+
+	/**
+	 * Encryption of the private deploy keys Artemis generates for private repositories.
+	 *
+	 * @param encryptionKey base64 of 32 random bytes (AES-256); private repositories are disabled when missing or invalid
+	 * @param encryptionKeyId label stored with every ciphertext, so a future key can be told apart
+	 */
+	public record DeployKeys(String encryptionKey, String encryptionKeyId) {
+
+		public DeployKeys {
+			encryptionKey = encryptionKey == null ? "" : encryptionKey.strip();
+			encryptionKeyId = encryptionKeyId == null || encryptionKeyId.isBlank() ? "v1" : encryptionKeyId.strip();
+		}
+	}
 
 	public record Security(boolean authEnabled, Oidc oidc) {
 	}

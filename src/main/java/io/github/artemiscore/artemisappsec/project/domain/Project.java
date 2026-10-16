@@ -71,6 +71,15 @@ public class Project {
 	@Column(name = "container_image")
 	private String containerImage;
 
+	/** Set only for private (SSH) repositories. */
+	@Enumerated(EnumType.STRING)
+	@Column(name = "access_status")
+	private AccessStatus accessStatus;
+
+	/** known_hosts line recorded on first contact with a Git server that is not pinned in the scanner (TOFU). */
+	@Column(name = "ssh_known_host")
+	private String sshKnownHost;
+
 	@ElementCollection(fetch = FetchType.EAGER)
 	@CollectionTable(name = "project_folder", joinColumns = @JoinColumn(name = "project_id"))
 	@OrderColumn(name = "position")
@@ -95,6 +104,7 @@ public class Project {
 		this.scanSchedule = ScanSchedule.EVERY_24_HOURS;
 		this.dockerfileMode = DockerfileMode.RECOMMENDED;
 		this.createdAt = Instant.now();
+		this.accessStatus = isPrivateUrl(sshUrl) ? AccessStatus.PENDING : null;
 		for (Stage stage : Stage.values()) {
 			pipeline.add(new PipelineStageConfig(this, stage, stage.enabledByDefault(), stage.defaultTool(), stage.defaultFailOn()));
 		}
@@ -146,6 +156,36 @@ public class Project {
 
 	public String getBranch() {
 		return branch;
+	}
+
+	/** SSH URLs point to private repositories cloned with an Artemis-generated deploy key. */
+	public static boolean isPrivateUrl(String url) {
+		return url != null && (url.startsWith("git@") || url.startsWith("ssh://"));
+	}
+
+	public boolean isPrivate() {
+		return isPrivateUrl(sshUrl);
+	}
+
+	public AccessStatus getAccessStatus() {
+		return accessStatus;
+	}
+
+	public String getSshKnownHost() {
+		return sshKnownHost;
+	}
+
+	public void updateAccess(AccessStatus status) {
+		if (isPrivate()) {
+			this.accessStatus = status;
+		}
+	}
+
+	/** Records the server's host key the first time it is seen; later checks never replace it. */
+	public void recordHostKeyIfAbsent(String knownHost) {
+		if (sshKnownHost == null && knownHost != null && !knownHost.isBlank()) {
+			this.sshKnownHost = knownHost.strip();
+		}
 	}
 
 	public String getContainerImage() {

@@ -14,7 +14,6 @@ import io.github.artemiscore.artemisappsec.scanjob.api.JobRequests.FailRequest;
 import io.github.artemiscore.artemisappsec.scanjob.api.JobRequests.SourceRequest;
 import io.github.artemiscore.artemisappsec.scanjob.api.JobRequests.StageReportRequest;
 import io.github.artemiscore.artemisappsec.scanjob.api.JobRequests.StageReportResponse;
-import io.github.artemiscore.artemisappsec.scanjob.service.JobAssignment;
 import io.github.artemiscore.artemisappsec.scanjob.service.ScanJobService;
 import io.github.artemiscore.artemisappsec.scanjob.service.StageReport;
 import io.github.artemiscore.artemisappsec.shared.domain.Stage;
@@ -34,8 +33,8 @@ class JobController {
 	}
 
 	@PostMapping("/claim")
-	ResponseEntity<JobAssignment> claim() {
-		return jobs.claim().map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.noContent().build());
+	ResponseEntity<Object> claim() {
+		return jobs.claim().<ResponseEntity<Object>>map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.noContent().build());
 	}
 
 	@PostMapping("/{runId}/source")
