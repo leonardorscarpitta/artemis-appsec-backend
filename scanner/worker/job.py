@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 
 from .api import ApiClient
-from .clone import CloneRefused, clone
+from .clone import CloneRefused, SshSession, clone, keyscan, known_hosts_for, ls_remote, validate_ssh_url
 from .config import Config
 from .sanitize import safe_log
 from .scan import run_stage
@@ -23,13 +23,20 @@ def process(job: dict, api: ApiClient, config: Config) -> None:
     work.mkdir(parents=True)
     try:
         src = work / "src"
+        ssh = None
         try:
+            if repo.get("access") == "ssh":
+                ssh = open_ssh_session(work, repo["cloneUrl"], job.get("credentials"))
             sha, subject = clone(repo["cloneUrl"], repo.get("branch", "main"), src, config.clone_timeout,
-                                 int(limits.get("maxRepoSizeMb", 500)))
+                                 int(limits.get("maxRepoSizeMb", 500)), ssh)
         except CloneRefused as refused:
             log.info("run %s: clone refused (%s)", job.get("number"), refused)
             api.fail(run_id, str(refused))
             return
+        finally:
+            # The deploy key never stays on disk while the tools run.
+            if ssh:
+                ssh.close()
         api.source(run_id, sha, subject[:500])
 
         folders = repo.get("paths") or []
@@ -62,6 +69,45 @@ def process(job: dict, api: ApiClient, config: Config) -> None:
     finally:
         # Source code never outlives the run.
         wipe(work)
+
+
+def process_access_check(job: dict, api: ApiClient, config: Config) -> None:
+    """Verifies the deploy key can read the repository (git ls-remote of the branch); nothing is cloned."""
+    check_id = job["checkId"]
+    repo = job["repository"]
+    work = config.workspace / f"check-{check_id}"
+    wipe(work)
+    work.mkdir(parents=True)
+    ssh = None
+    host_key = None
+    try:
+        target = validate_ssh_url(repo["cloneUrl"])
+        credentials = job.get("credentials") or {}
+        if target.pinned:
+            known_hosts = known_hosts_for(target, None)
+        else:
+            known_hosts = credentials.get("knownHosts") or keyscan(target)
+            host_key = known_hosts
+        ssh = SshSession(work / "ssh", credentials["sshPrivateKey"], known_hosts)
+        ok, message = ls_remote(repo["cloneUrl"], repo.get("branch", "main"), ssh)
+    except CloneRefused as refused:
+        ok, message = False, str(refused)
+    except KeyError:
+        ok, message = False, "No deploy key was provided for this repository"
+    finally:
+        if ssh:
+            ssh.close()
+        wipe(work)
+    log.info("access check %s for %s -> %s", check_id, repo.get("name"), "ok" if ok else "failed")
+    api.access_check(check_id, ok, message, host_key if ok else None)
+
+
+def open_ssh_session(work: Path, url: str, credentials: dict | None) -> SshSession:
+    if not credentials or not credentials.get("sshPrivateKey"):
+        raise CloneRefused("No deploy key was provided for this private repository")
+    target = validate_ssh_url(url)
+    known_hosts = known_hosts_for(target, credentials.get("knownHosts"))
+    return SshSession(work / "ssh", credentials["sshPrivateKey"], known_hosts)
 
 
 def merge(parts: list[tuple[str, dict]]) -> dict:

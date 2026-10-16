@@ -40,6 +40,10 @@ class ApiClient:
     def fail(self, run_id: str, reason: str) -> None:
         self._request("POST", f"/jobs/{run_id}/fail", {"reason": reason[:500]})
 
+    def access_check(self, check_id: str, ok: bool, message: str, host_key: str | None) -> None:
+        self._request("PUT", f"/access-checks/{check_id}",
+                      {"status": "ok" if ok else "failed", "message": message[:500], "hostKey": host_key})
+
     def _request(self, method: str, path: str, payload: dict) -> tuple[int, dict | None]:
         data = json.dumps(payload).encode()
         delay = 1.0

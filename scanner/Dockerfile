@@ -56,9 +56,10 @@ RUN python -m venv /opt/semgrep \
 FROM python:3.13-slim-bookworm
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git ca-certificates \
+    && apt-get install -y --no-install-recommends git ca-certificates openssh-client \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /usr/share/licenses/git && cp /usr/share/doc/git/copyright /usr/share/licenses/git/COPYING \
+    && mkdir -p /usr/share/licenses/openssh-client && cp /usr/share/doc/openssh-client/copyright /usr/share/licenses/openssh-client/COPYING \
     && groupadd --system --gid 10001 runner \
     && useradd --system --uid 10001 --gid runner --home-dir /nonexistent --shell /usr/sbin/nologin runner \
     && mkdir -p /workspace /cache/trivy /cache/grype \
@@ -71,6 +72,8 @@ COPY --from=semgrep /opt/tools/licenses/semgrep/ /usr/share/licenses/semgrep/
 RUN ln -s /opt/semgrep/bin/semgrep /usr/local/bin/semgrep
 
 COPY rules/ /opt/artemis/rules/
+# Official host keys of GitHub, GitLab and Bitbucket (private repositories over SSH); see the file header.
+COPY known_hosts /etc/artemis/known_hosts
 COPY worker/ /app/worker/
 COPY THIRD_PARTY_NOTICES.md /usr/share/licenses/THIRD_PARTY_NOTICES.md
 
