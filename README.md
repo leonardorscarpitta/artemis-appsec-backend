@@ -167,7 +167,7 @@ Security tools run **self-hosted** in the `scanner` service (image `artemisappse
 | Stage | Tool | License |
 | --- | --- | --- |
 | Secrets | Gitleaks 8.30.1 | MIT |
-| SAST | Semgrep CE 1.181.0 (engine) with Artemis's own rules in `scanner/rules/` — never the Semgrep Registry | LGPL-2.1 |
+| SAST | Semgrep CE 1.181.0 (engine) with Artemis's own 31 rules in `scanner/rules/` (JavaScript/TypeScript, Java + Spring, Python incl. Flask, Django and FastAPI) — never the Semgrep Registry | LGPL-2.1 |
 | Dependencies (SCA), licenses, IaC, Dockerfile | Trivy 0.76.0 | Apache-2.0 |
 | Dependencies (SCA, alternative) | Grype 0.120.1 | Apache-2.0 |
 | Dockerfile | Hadolint 2.15.1 | GPL-3.0 |
