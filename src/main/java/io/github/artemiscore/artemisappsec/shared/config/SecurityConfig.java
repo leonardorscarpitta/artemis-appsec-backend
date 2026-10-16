@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -30,7 +31,9 @@ public class SecurityConfig {
 	private static final String[] PUBLIC_PATHS = { "/actuator/health/**", "/actuator/info", "/api/docs/**",
 			"/api/v1/billing/plans" };
 
+	/** Everything except {@code /internal/**}, which has its own chain (see {@code scanjob.api.InternalApiSecurityConfig}). */
 	@Bean
+	@Order(2)
 	SecurityFilterChain securityFilterChain(HttpSecurity http, ArtemisAppSecProperties properties) throws Exception {
 		http.csrf(csrf -> csrf.disable())
 			.cors(cors -> {

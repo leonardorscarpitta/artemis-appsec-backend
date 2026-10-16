@@ -5,3 +5,4 @@ target/
 .vscode/
 .m2/
 authelia/secrets/
+scanner/

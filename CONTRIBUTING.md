@@ -9,7 +9,7 @@ Artemis is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE.md)
 By submitting a contribution (a pull request, patch, or any other material) you agree that:
 
 1. The contribution is your original work, or you otherwise have the right to submit it.
-2. You grant Leonardo Scarpitta (the licensor) a perpetual, worldwide, non-exclusive, royalty-free, irrevocable license to use, reproduce, modify, distribute and sublicense your contribution, **including for commercial purposes and under other license terms**.
+2. You grant Artemis-Core (the licensor) a perpetual, worldwide, non-exclusive, royalty-free, irrevocable license to use, reproduce, modify, distribute and sublicense your contribution, **including for commercial purposes and under other license terms**.
 3. Everyone else receives your contribution under the same PolyForm Noncommercial License 1.0.0 as the rest of the project.
 
 If you cannot agree to these terms, please open an issue describing the change instead of a pull request.

@@ -1,11 +1,14 @@
 package io.github.artemiscore.artemisappsec.pipelinerun.domain;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
+import io.github.artemiscore.artemisappsec.shared.domain.FailThreshold;
+import io.github.artemiscore.artemisappsec.shared.domain.Severity;
 import io.github.artemiscore.artemisappsec.shared.domain.Stage;
 import io.github.artemiscore.artemisappsec.shared.error.BusinessRuleException;
 import jakarta.persistence.CascadeType;
@@ -81,9 +84,73 @@ public class PipelineRun {
 		run.status = RunStatus.QUEUED;
 		run.startedAt = Instant.now();
 		for (int i = 0; i < selection.size(); i++) {
-			run.stages.add(new StageRun(run, i, selection.get(i).stage(), selection.get(i).tool()));
+			StageSelection s = selection.get(i);
+			run.stages.add(new StageRun(run, i, s.stage(), s.tool(), s.failOn()));
 		}
 		return run;
+	}
+
+	/** Called when the scanner runner picks the run up; stages it cannot execute are skipped right away. */
+	public void start(Instant now) {
+		requireStatus(RunStatus.QUEUED, "start");
+		status = RunStatus.RUNNING;
+		startedAt = now;
+		stages.stream()
+			.filter(s -> !s.getStage().available())
+			.forEach(s -> s.skip("Skipped: this stage is not available in the scanner runner yet."));
+	}
+
+	public void recordSource(String sha, String message) {
+		requireStatus(RunStatus.RUNNING, "record its source");
+		this.commitSha = sha;
+		this.commitMessage = message;
+	}
+
+	public StageRun recordStage(Stage stage, String tool, StageOutcome outcome, int durationSeconds, String log,
+			int findings, Severity highest, int newFindings) {
+		requireStatus(RunStatus.RUNNING, "record stage results");
+		StageRun target = stages.stream()
+			.filter(s -> s.getStage() == stage)
+			.findFirst()
+			.orElseThrow(() -> new BusinessRuleException("Run #%d has no %s stage".formatted(number, stage.wireValue())));
+		if (!target.isPending()) {
+			throw new BusinessRuleException("Stage %s of run #%d was already reported".formatted(stage.wireValue(), number));
+		}
+		if (!target.getTool().equals(tool)) {
+			throw new IllegalArgumentException("Stage %s of run #%d must run %s, not %s"
+				.formatted(stage.wireValue(), number, target.getTool(), tool));
+		}
+		target.record(outcome, durationSeconds, log, findings, highest);
+		this.newFindings += Math.max(0, newFindings);
+		return target;
+	}
+
+	public void complete(Instant now) {
+		requireStatus(RunStatus.RUNNING, "complete");
+		stages.forEach(s -> s.skip("Skipped: the runner did not report this stage."));
+		boolean failed = stages.stream().anyMatch(s -> s.getStatus() == StageStatus.FAILED);
+		status = failed ? RunStatus.FAILED : RunStatus.SUCCESS;
+		durationSeconds = elapsedSince(now);
+	}
+
+	/** Fails the run without stage results (e.g. the repository could not be cloned, or the runner timed out). */
+	public void fail(String reason, Instant now) {
+		if (!status.isActive()) {
+			throw new BusinessRuleException("Run #%d is %s and cannot fail".formatted(number, status.wireValue()));
+		}
+		stages.forEach(s -> s.skip("Skipped: " + reason));
+		status = RunStatus.FAILED;
+		durationSeconds = elapsedSince(now);
+	}
+
+	private int elapsedSince(Instant now) {
+		return (int) Math.max(0, Duration.between(startedAt, now).getSeconds());
+	}
+
+	private void requireStatus(RunStatus expected, String action) {
+		if (status != expected) {
+			throw new BusinessRuleException("Run #%d is %s and cannot %s".formatted(number, status.wireValue(), action));
+		}
 	}
 
 	public void cancel() {
@@ -91,7 +158,7 @@ public class PipelineRun {
 			throw new BusinessRuleException("Run #%d is %s and cannot be cancelled".formatted(number, status.wireValue()));
 		}
 		status = RunStatus.CANCELLED;
-		stages.forEach(StageRun::skip);
+		stages.forEach(s -> s.skip("Skipped: the run was cancelled."));
 	}
 
 	public int totalFindings() {
@@ -154,6 +221,6 @@ public class PipelineRun {
 		return newFindings;
 	}
 
-	public record StageSelection(Stage stage, String tool) {
+	public record StageSelection(Stage stage, String tool, FailThreshold failOn) {
 	}
 }

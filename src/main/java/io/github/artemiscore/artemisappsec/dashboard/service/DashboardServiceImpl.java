@@ -32,7 +32,8 @@ class DashboardServiceImpl implements DashboardService {
 	public DashboardSummary summary() {
 		List<FindingSummary> active = findings.findActive();
 		List<ProjectSummary> repositories = projects.findAll();
-		double average = active.stream().mapToDouble(FindingSummary::cvss).average().orElse(0);
+		double average = active.stream().map(FindingSummary::cvss).filter(Objects::nonNull).mapToDouble(Double::doubleValue)
+			.average().orElse(0);
 		List<SeverityCount> bySeverity = Arrays.stream(Severity.values())
 			.map(s -> new SeverityCount(s, active.stream().filter(f -> f.severity() == s).count()))
 			.toList();

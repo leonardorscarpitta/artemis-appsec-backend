@@ -1,4 +1,5 @@
-# Local development stack: PostgreSQL, Authelia (OIDC behind Caddy TLS) and the API in debug mode.
+# Local development stack: PostgreSQL, Authelia (OIDC behind Caddy TLS), the API in debug mode and the scanner runner.
+# Every service has a memory limit so the whole stack fits comfortably on a 16 GB machine (~4.3 GB in total).
 services:
   db:
     image: postgres:18-alpine
@@ -10,6 +11,8 @@ services:
       - "${DB_PORT:-5432}:5432"
     volumes:
       - db_data:/var/lib/postgresql
+    mem_limit: 512m
+    mem_reservation: 256m
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -23,11 +26,17 @@ services:
     command: >
       mvn -B -Dmaven.repo.local=/app/.m2/repository spring-boot:run
       -Dspring-boot.run.profiles=dev
-      -Dspring-boot.run.jvmArguments="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005"
+      -Dspring-boot.run.jvmArguments="-Xmx640m -XX:+UseSerialGC -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005"
     env_file: .env
     environment:
       HOME: /tmp
+      MAVEN_OPTS: -Xmx384m
       DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
+    mem_limit: 1536m
+    mem_reservation: 768m
+    networks:
+      - default
+      - scanner
     ports:
       - "${API_PORT:-8080}:8080"
       - "${DEBUG_PORT:-5005}:5005"
@@ -39,6 +48,7 @@ services:
 
   authelia:
     image: authelia/authelia:4.39
+    restart: unless-stopped
     environment:
       X_AUTHELIA_CONFIG: /config/configuration.yml
       X_AUTHELIA_CONFIG_FILTERS: template
@@ -50,6 +60,7 @@ services:
       - ./authelia/configuration.yml:/config/configuration.yml:ro
       - ./authelia/secrets:/secrets:ro
       - authelia_data:/data
+    mem_limit: 384m  # argon2 password checks need ~64 MB each
 
   auth-proxy:
     image: caddy:2-alpine
@@ -58,10 +69,44 @@ services:
     volumes:
       - ./authelia/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
+    mem_limit: 64m
     depends_on:
       - authelia
+
+  # Runs the open-source scanners (README "Scanner runner"). Sandboxed: read-only root filesystem, no Linux
+  # capabilities, in-memory workspace wiped after each run, and no route to the database (scanner network only).
+  scanner:
+    build: ./scanner
+    image: artemisappsec/runner:dev
+    restart: unless-stopped
+    environment:
+      ARTEMIS_API_URL: http://api:8080
+      SCANNER_TOKEN: ${SCANNER_TOKEN:-}
+    read_only: true
+    tmpfs:
+      - /tmp:rw,size=512m,mode=1777
+      - /workspace:rw,size=1g,uid=10001,gid=10001,mode=0700
+    volumes:
+      - scanner_cache:/cache
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
+    mem_reservation: 1g
+    cpus: 2
+    pids_limit: 512
+    networks:
+      - scanner
+    depends_on:
+      - api
+
+networks:
+  # Shared only by the API and the scanner; the database stays on the default network.
+  scanner: {}
 
 volumes:
   db_data:
   authelia_data:
   caddy_data:
+  scanner_cache:
