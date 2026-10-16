@@ -1,4 +1,4 @@
-Required Notice: Copyright 2026 Leonardo Scarpitta (https://github.com/Artemis-Core)
+Required Notice: Copyright 2026 Artemis-Core (https://github.com/Artemis-Core)
 
 # PolyForm Noncommercial License 1.0.0
 
