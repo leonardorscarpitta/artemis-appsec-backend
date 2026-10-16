@@ -5,9 +5,9 @@ import java.util.UUID;
 
 public interface ApiTokenService {
 
-	List<ApiTokenView> findAll();
+	List<ApiTokenView> findAll(UUID organizationId);
 
-	CreatedApiToken create(CreateApiTokenCommand command);
+	CreatedApiToken create(UUID organizationId, CreateApiTokenCommand command);
 
-	void revoke(UUID id);
+	void revoke(UUID organizationId, UUID id);
 }

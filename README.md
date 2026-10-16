@@ -43,7 +43,15 @@ docker compose up -d
 
 The `api` container runs `mvn spring-boot:run` with the `dev` profile. Maven compiles once at startup, so after changing code run `docker compose restart api` (DevTools also restarts the app when an IDE recompiles classes into `target/`). Dependencies are cached in `.m2/` (git-ignored).
 
-The `dev` profile loads demo data (`src/main/resources/db/seed`). Set `AUTH_ENABLED=false` in `.env` to skip authentication entirely (local debugging only).
+The `dev` profile loads demo data (`src/main/resources/db/seed`): the **Acme Corp** organization (slug `acme`) whose members `ana.souza@acme.example` (owner), `carla.mendes@…` (analyst) and `daniel.rocha@…` (developer) match the Keycloak dev users and are linked on their first sign-in. Set `AUTH_ENABLED=false` in `.env` to skip authentication entirely (local debugging only: every request then acts as owner of the organization in the header).
+
+**Resetting the dev database.** The seeds are rewritten when the schema changes in ways they depend on (e.g. multi-tenancy), so an existing dev database may fail Flyway validation. Reset only the **application** database (never the `keycloak` one, which holds the dev users):
+
+```sh
+docker compose stop api
+docker compose exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "DROP SCHEMA public CASCADE" -c "CREATE SCHEMA public"'
+docker compose start api
+```
 
 Production image: `docker build -t artemisappsec-api .` (multi-stage, non-root, layered jar).
 
@@ -61,10 +69,34 @@ API ──http──> keycloak:8080/realms/artemisappsec/protocol/openid-connect
 - **TLS:** Caddy terminates HTTPS with its local CA at `https://auth.artemisappsec.localhost:9443` (`*.localhost` resolves to your machine). Trust Caddy's root CA once (`docker compose cp auth-proxy:/data/caddy/pki/authorities/local/root.crt .`) or accept the warning. Keycloak runs with `--proxy-headers=xforwarded` and a fixed public `--hostname`.
 - **Realm:** self-registration with e-mail verification, Terms of Use / Privacy Policy acceptance on first sign-in (required action with links to the app), password policy (12–128 chars, not username/e-mail, history 3), brute-force protection, en/pt-BR, reset password, account deletion, Organizations enabled. Dev e-mails go to **Mailpit** (http://localhost:8025); set `KC_SMTP_*` for a real server.
 - **Client:** `artemisappsec-web`, public, Authorization Code + PKCE (S256), redirect `ARTEMISAPPSEC_WEB_ORIGIN/auth/callback`, post-logout redirect to the app, audience mapper adding `artemisappsec-api` to access tokens. `prompt=create` opens the registration page.
-- **API validation:** issuer, expiry and audience (`artemisappsec-api`); principal = `preferred_username`.
+- **API validation:** issuer, expiry and audience (`artemisappsec-api`); principal = `preferred_username`. Tokens carry no roles: authorization is per organization (below).
 - **Database:** Keycloak uses its own database/role (`keycloak`) in the same PostgreSQL instance, created idempotently by the `keycloak-db-init` job (`KEYCLOAK_DB_PASSWORD`).
 - **Dev users:** `./keycloak/create-dev-users.sh` creates `ana.souza`, `carla.mendes`, `daniel.rocha` (verified e-mail, random passwords) and writes `keycloak/secrets/dev-credentials.txt` (git-ignored).
-- `GET /api/v1/me` returns the signed-in user.
+- `GET /api/v1/me` returns the signed-in user (`username`, `name`, `email`, `emailVerified`).
+
+## Organizations and permissions
+
+Artemis is multi-tenant: every repository, finding, run, report, policy, integration, key, token, member, invitation, setting and subscription belongs to an **organization**. Tenancy and roles live in Artemis (not in Keycloak).
+
+- **Tenant header:** every organization-scoped request carries `X-Artemis-Organization: <slug>` (the frontend sends the slug of its `/<slug>/…` URL). Missing header → `400` `organization-required`; unknown slug, not a member or inactive member → `404` `organization-not-found` (existence is not revealed); missing permission → `403` `forbidden` with `permission`. Endpoints without the header: `/me`, `/me/**`, `POST /organizations`, `/roles`, `/pipeline/stages`, `/billing/plans`.
+- **Membership:** a member is linked to the Keycloak account by `sub`. Members created before the account existed (invitations, seeds) are linked on first use when the token's **verified** e-mail matches.
+- **Roles → permissions** (`organization/domain/Role.java`):
+
+  | Role | viewFindings | triage | pipelines | integrations | team | billing |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | owner | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+  | admin | ✓ | ✓ | ✓ | ✓ | ✓ | |
+  | analyst | ✓ | ✓ | ✓ | | | |
+  | developer | ✓ | ✓ | | | | |
+  | viewer | ✓ | | | | | |
+
+  `viewFindings`: every `GET`. `triage`: finding status, risk acceptances, reports. `pipelines`: create/configure repositories and pipelines, run/re-run/cancel scans, edit policies. `integrations`: integrations, deploy keys, API tokens. `team`: invitations, roles, removing members, organization settings. `billing` (owner): plan changes, ownership transfer, deleting the organization.
+- **Enforcement:** `organization/api/TenantInterceptor` resolves the tenant for every `/api/v1/**` handler (unless annotated `@WithoutOrganization`) and checks `@RequiresPermission`; `GET` defaults to `viewFindings` and any other method **without** the annotation is refused (fail closed). Controllers receive a `Tenant` parameter and pass `tenant.organizationId()` to services; every query is filtered by organization (directly or through its repositories), so ids/numbers from another organization return `404`.
+- **Rules:** one owner per organization; ownership is transferred (`POST /members/transfer-ownership`, the old owner becomes admin), never assigned; nobody changes their own role or removes themselves (they leave); the owner cannot leave. A user may own at most 5 organizations; creating one requires a verified e-mail.
+- **Account endpoints:** `GET /me/organizations` (`[{slug, name, role, permissions, plan}]`), `POST /organizations` (`{name, slug, defaultLanguage?}` → the creator becomes owner; FREE plan, default settings, integration catalogue and policies are provisioned), `GET /me/invitations` (pending, non-expired invitations for the verified e-mail), `POST /me/invitations/{id}/accept|decline`, `POST /me/organizations/{slug}/leave`.
+- **Slugs:** `^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$`, unique (`409 slug-taken`), not an app route (`409 slug-reserved`: `organizations`, `auth`, `login`, `help`, `privacy`, `terms`, `api`, …). Renaming the slug in the settings changes the organization's URLs.
+- **Invitations** expire after 7 days (resend renews them). They are **not e-mailed** yet: the invitee sees them after signing in or registering with that address.
+- Deleting an organization (`DELETE /organization`, owner) removes everything in it (database `ON DELETE CASCADE`).
 
 ## Configuration
 
@@ -114,8 +146,8 @@ Rules:
 | `report` | Security summary and OWASP compliance reports; text localized by `Accept-Language` (en-US, pt-BR). Requested reports stay `generating` until a report generator exists | `/api/v1/reports` |
 | `policy` | Organization-wide stage gates (fail threshold, required), remediation SLAs, license allow/deny lists, risk acceptances | `/api/v1/policies`, `/api/v1/risk-acceptances` |
 | `account` | The signed-in user from the JWT | `/api/v1/me` |
-| `billing` | Plans (FREE: 90 scans/month; PRO: R$ 24,99/month, 300 scans/month and AI triage), the organization's subscription, monthly scan usage (`ScanUsage` port, implemented by `pipelinerun`) and entitlements. Re-runs are refused once the month's limit is reached. Plan changes are disabled by default and no payment platform is integrated | `/api/v1/billing`, `/api/v1/billing/plans` (public) |
-| `organization` | Integrations, SSH deploy keys, team (members, invitations, roles), organization settings, API tokens | `/api/v1/integrations`, `/api/v1/deploy-keys`, `/api/v1/members`, `/api/v1/invitations`, `/api/v1/roles`, `/api/v1/organization`, `/api/v1/api-tokens` |
+| `billing` | Plans (FREE: 90 scans/month; PRO: R$ 24,99/month, 300 scans/month and AI triage), each organization's subscription, monthly scan usage per organization (`ScanUsage` port, implemented by `pipelinerun`) and entitlements. Re-runs are refused once the month's limit is reached. Plan changes are disabled by default and no payment platform is integrated | `/api/v1/billing`, `/api/v1/billing/plans` (public) |
+| `organization` | Organizations (tenancy, memberships, creation, invitations for the signed-in account, permission enforcement), integrations, SSH deploy keys, team (members, invitations, roles, ownership), organization settings, API tokens. Publishes `OrganizationCreated` (billing and policy provision their defaults) and reads plans through the `PlanLookup` port (implemented by `billing`) | `/api/v1/organizations`, `/api/v1/me/organizations`, `/api/v1/me/invitations`, `/api/v1/integrations`, `/api/v1/deploy-keys`, `/api/v1/members`, `/api/v1/invitations`, `/api/v1/roles`, `/api/v1/organization`, `/api/v1/api-tokens` |
 
 Query parameters accept the same enum values as the JSON (`?status=falsePositive&severity=critical`), via `shared/config/WireEnumConverterFactory`.
 
@@ -124,7 +156,6 @@ Security notes for `organization`:
 - Deploy keys accept **public keys only** (private keys are rejected); the type and key data are validated (ed25519, ECDSA, RSA ≥ 2048 bits) and the OpenSSH `SHA256:` fingerprint is computed server-side.
 - API tokens (`art_…`) are generated with `SecureRandom` and returned **once**; only their SHA-256 hash and last four characters are stored.
 - The OIDC client secret is never stored or returned — it belongs in the deployment's secret store; the API only reports whether it is configured.
-- The organization is a single row (`organization_settings`): one organization per deployment.
 
 JSON enum values match the frontend (`"Java + Spring"`, `"24h"`, `"sast"`, `"critical"`...).
 

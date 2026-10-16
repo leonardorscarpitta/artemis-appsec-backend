@@ -12,9 +12,9 @@ import io.github.artemiscore.artemisappsec.project.domain.Project;
 public interface ProjectRepository extends JpaRepository<Project, UUID> {
 
 	@EntityGraph(attributePaths = "pipeline")
-	Optional<Project> findByName(String name);
+	Optional<Project> findByOrganizationIdAndName(UUID organizationId, String name);
 
-	List<Project> findAllByOrderByNameAsc();
+	List<Project> findByOrganizationIdOrderByNameAsc(UUID organizationId);
 
-	boolean existsByName(String name);
+	boolean existsByOrganizationIdAndName(UUID organizationId, String name);
 }

@@ -1,7 +1,6 @@
 package io.github.artemiscore.artemisappsec.pipelinerun.api;
 
 import java.net.URI;
-import java.security.Principal;
 import java.util.List;
 
 import org.springframework.http.ResponseEntity;
@@ -12,6 +11,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import io.github.artemiscore.artemisappsec.organization.api.RequiresPermission;
+import io.github.artemiscore.artemisappsec.organization.domain.Permission;
+import io.github.artemiscore.artemisappsec.organization.service.Tenant;
 import io.github.artemiscore.artemisappsec.pipelinerun.domain.RunStatus;
 import io.github.artemiscore.artemisappsec.pipelinerun.service.PipelineRunService;
 import io.github.artemiscore.artemisappsec.pipelinerun.service.RunDetails;
@@ -27,9 +29,6 @@ import jakarta.validation.constraints.Size;
 @Tag(name = "Pipeline runs", description = "Executions of repository pipelines")
 class PipelineRunController {
 
-	/** Recorded as the actor when authentication is disabled (dev profile). */
-	private static final String ANONYMOUS_ACTOR = "local-developer";
-
 	private final PipelineRunService runs;
 
 	PipelineRunController(PipelineRunService runs) {
@@ -37,31 +36,33 @@ class PipelineRunController {
 	}
 
 	@GetMapping
-	List<RunView> list(@RequestParam(required = false) @Size(max = 255) String repository,
+	List<RunView> list(Tenant tenant, @RequestParam(required = false) @Size(max = 255) String repository,
 			@RequestParam(required = false) String status,
 			@RequestParam(required = false) @Size(max = 255) String branch) {
 		RunStatus parsed = status == null || status.isBlank() ? null : RunStatus.fromWireValue(status);
-		return runs.find(new RunFilter(repository, parsed, branch));
+		return runs.find(tenant.organizationId(), new RunFilter(repository, parsed, branch));
 	}
 
 	@GetMapping("/summary")
-	RunsSummary summary() {
-		return runs.summary();
+	RunsSummary summary(Tenant tenant) {
+		return runs.summary(tenant.organizationId());
 	}
 
 	@GetMapping("/{number}")
-	RunDetails get(@PathVariable @Positive long number) {
-		return runs.get(number);
+	RunDetails get(Tenant tenant, @PathVariable @Positive long number) {
+		return runs.get(tenant.organizationId(), number);
 	}
 
 	@PostMapping("/{number}/rerun")
-	ResponseEntity<RunDetails> rerun(@PathVariable @Positive long number, Principal principal) {
-		RunDetails created = runs.rerun(number, principal != null ? principal.getName() : ANONYMOUS_ACTOR);
+	@RequiresPermission(Permission.PIPELINES)
+	ResponseEntity<RunDetails> rerun(Tenant tenant, @PathVariable @Positive long number) {
+		RunDetails created = runs.rerun(tenant.organizationId(), number, tenant.actor());
 		return ResponseEntity.created(URI.create("/api/v1/pipeline-runs/" + created.run().number())).body(created);
 	}
 
 	@PostMapping("/{number}/cancel")
-	RunDetails cancel(@PathVariable @Positive long number) {
-		return runs.cancel(number);
+	@RequiresPermission(Permission.PIPELINES)
+	RunDetails cancel(Tenant tenant, @PathVariable @Positive long number) {
+		return runs.cancel(tenant.organizationId(), number);
 	}
 }

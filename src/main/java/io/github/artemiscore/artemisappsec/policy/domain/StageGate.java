@@ -1,5 +1,7 @@
 package io.github.artemiscore.artemisappsec.policy.domain;
 
+import java.util.UUID;
+
 import io.github.artemiscore.artemisappsec.shared.domain.FailThreshold;
 import io.github.artemiscore.artemisappsec.shared.domain.Stage;
 import jakarta.persistence.Column;
@@ -15,7 +17,13 @@ import jakarta.persistence.Table;
 public class StageGate {
 
 	@Id
+	private UUID id;
+
+	@Column(name = "organization_id", nullable = false)
+	private UUID organizationId;
+
 	@Enumerated(EnumType.STRING)
+	@Column(nullable = false)
 	private Stage stage;
 
 	@Enumerated(EnumType.STRING)
@@ -28,7 +36,9 @@ public class StageGate {
 	protected StageGate() {
 	}
 
-	public StageGate(Stage stage, FailThreshold failOn, boolean required) {
+	public StageGate(UUID organizationId, Stage stage, FailThreshold failOn, boolean required) {
+		this.id = UUID.randomUUID();
+		this.organizationId = organizationId;
 		this.stage = stage;
 		update(failOn, required);
 	}

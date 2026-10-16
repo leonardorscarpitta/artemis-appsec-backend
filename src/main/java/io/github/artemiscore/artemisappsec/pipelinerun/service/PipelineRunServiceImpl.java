@@ -3,6 +3,7 @@ package io.github.artemiscore.artemisappsec.pipelinerun.service;
 import static io.github.artemiscore.artemisappsec.pipelinerun.persistence.PipelineRunSpecifications.branchContains;
 import static io.github.artemiscore.artemisappsec.pipelinerun.persistence.PipelineRunSpecifications.hasProject;
 import static io.github.artemiscore.artemisappsec.pipelinerun.persistence.PipelineRunSpecifications.hasStatus;
+import static io.github.artemiscore.artemisappsec.pipelinerun.persistence.PipelineRunSpecifications.inProjects;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -54,8 +55,11 @@ class PipelineRunServiceImpl implements PipelineRunService {
 	}
 
 	@Override
-	public List<RunView> find(RunFilter filter) {
-		Map<UUID, String> names = projectNames();
+	public List<RunView> find(UUID organizationId, RunFilter filter) {
+		Map<UUID, String> names = projectNames(organizationId);
+		if (names.isEmpty()) {
+			return List.of();
+		}
 		UUID projectId = null;
 		if (filter.repository() != null && !filter.repository().isBlank()) {
 			projectId = names.entrySet().stream()
@@ -67,14 +71,16 @@ class PipelineRunServiceImpl implements PipelineRunService {
 				return List.of();
 			}
 		}
-		Specification<PipelineRun> spec = Specification.allOf(hasProject(projectId), hasStatus(filter.status()),
+		Specification<PipelineRun> spec = Specification.allOf(inProjects(names.keySet()), hasProject(projectId), hasStatus(filter.status()),
 				branchContains(filter.branch()));
 		return runs.findAll(spec, Sort.by(Sort.Direction.DESC, "number")).stream().map(r -> toView(r, names)).toList();
 	}
 
 	@Override
-	public RunsSummary summary() {
-		List<PipelineRun> recent = runs.findByStartedAtAfter(Instant.now(clock).minus(SUMMARY_WINDOW));
+	public RunsSummary summary(UUID organizationId) {
+		Map<UUID, String> names = projectNames(organizationId);
+		List<PipelineRun> recent = names.isEmpty() ? List.of()
+				: runs.findByProjectIdInAndStartedAtAfter(names.keySet(), Instant.now(clock).minus(SUMMARY_WINDOW));
 		long finished = recent.stream().filter(r -> r.getStatus().isFinished()).count();
 		long succeeded = recent.stream().filter(r -> r.getStatus() == RunStatus.SUCCESS).count();
 		double avgDuration = recent.stream()
@@ -88,18 +94,19 @@ class PipelineRunServiceImpl implements PipelineRunService {
 	}
 
 	@Override
-	public RunDetails get(long number) {
-		return toDetails(load(number), projectNames());
+	public RunDetails get(UUID organizationId, long number) {
+		Map<UUID, String> names = projectNames(organizationId);
+		return toDetails(load(number, names), names);
 	}
 
 	@Override
 	@Transactional
-	public RunDetails rerun(long number, String actor) {
-		billing.assertCanScan();
-		PipelineRun source = load(number);
+	public RunDetails rerun(UUID organizationId, long number, String actor) {
+		PipelineRun source = load(number, projectNames(organizationId));
+		billing.assertCanScan(organizationId);
 		ProjectSummary project = projects.findById(source.getProjectId())
 			.orElseThrow(() -> new ResourceNotFoundException("Repository", source.getProjectId()));
-		List<StageSelection> stages = enabledStages(project.name());
+		List<StageSelection> stages = enabledStages(organizationId, project.name());
 		PipelineRun run = PipelineRun.queued(runs.nextNumber(), source.getProjectId(), source.getBranch(),
 				source.getCommitSha(), source.getCommitMessage(), actor, stages);
 		return toDetails(runs.save(run), Map.of(project.id(), project.name()));
@@ -107,10 +114,10 @@ class PipelineRunServiceImpl implements PipelineRunService {
 
 	@Override
 	@Transactional
-	public RunDetails queueScan(String repository, String actor) {
-		ProjectDetails project = projects.getByName(repository);
-		billing.assertCanScan();
-		List<StageSelection> stages = enabledStages(repository);
+	public RunDetails queueScan(UUID organizationId, String repository, String actor) {
+		ProjectDetails project = projects.getByName(organizationId, repository);
+		billing.assertCanScan(organizationId);
+		List<StageSelection> stages = enabledStages(organizationId, repository);
 		PipelineRun run = PipelineRun.queued(runs.nextNumber(), project.project().id(), project.project().branch(),
 				PENDING_COMMIT, PENDING_MESSAGE, actor, stages);
 		return toDetails(runs.save(run), Map.of(project.project().id(), repository));
@@ -173,8 +180,8 @@ class PipelineRunServiceImpl implements PipelineRunService {
 		return stale.size();
 	}
 
-	private List<StageSelection> enabledStages(String repository) {
-		List<StageSelection> stages = projects.getByName(repository).pipeline().stream()
+	private List<StageSelection> enabledStages(UUID organizationId, String repository) {
+		List<StageSelection> stages = projects.getByName(organizationId, repository).pipeline().stream()
 			.filter(s -> s.enabled())
 			.map(s -> new StageSelection(s.id(), s.tool(), s.failOn()))
 			.toList();
@@ -197,18 +204,21 @@ class PipelineRunServiceImpl implements PipelineRunService {
 
 	@Override
 	@Transactional
-	public RunDetails cancel(long number) {
-		PipelineRun run = load(number);
+	public RunDetails cancel(UUID organizationId, long number) {
+		Map<UUID, String> names = projectNames(organizationId);
+		PipelineRun run = load(number, names);
 		run.cancel();
-		return toDetails(run, projectNames());
+		return toDetails(run, names);
 	}
 
-	private PipelineRun load(long number) {
-		return runs.findByNumber(number).orElseThrow(() -> new ResourceNotFoundException("Pipeline run", number));
+	private PipelineRun load(long number, Map<UUID, String> organizationProjects) {
+		return runs.findByNumber(number)
+			.filter(r -> organizationProjects.containsKey(r.getProjectId()))
+			.orElseThrow(() -> new ResourceNotFoundException("Pipeline run", number));
 	}
 
-	private Map<UUID, String> projectNames() {
-		return projects.findAll().stream().collect(Collectors.toMap(ProjectSummary::id, ProjectSummary::name));
+	private Map<UUID, String> projectNames(UUID organizationId) {
+		return projects.findAll(organizationId).stream().collect(Collectors.toMap(ProjectSummary::id, ProjectSummary::name));
 	}
 
 	private static RunView toView(PipelineRun r, Map<UUID, String> names) {

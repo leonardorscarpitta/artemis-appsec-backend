@@ -29,17 +29,16 @@ class DeployKeyServiceImpl implements DeployKeyService {
 	}
 
 	@Override
-	public List<DeployKeyView> findAll() {
-		Map<UUID, String> names = projects.findAll().stream()
-			.collect(Collectors.toMap(ProjectSummary::id, ProjectSummary::name));
-		return keys.findAllByOrderByCreatedAtAsc().stream().map(k -> toView(k, names.get(k.getProjectId()))).toList();
+	public List<DeployKeyView> findAll(UUID organizationId) {
+		Map<UUID, String> names = projectNames(organizationId);
+		return keys.findByProjectIdInOrderByCreatedAtAsc(names.keySet()).stream().map(k -> toView(k, names.get(k.getProjectId()))).toList();
 	}
 
 	@Override
 	@Transactional
-	public DeployKeyView add(AddDeployKeyCommand command) {
+	public DeployKeyView add(UUID organizationId, AddDeployKeyCommand command) {
 		SshPublicKey key = SshPublicKey.parse(command.publicKey());
-		ProjectSummary project = projects.getByName(command.repository()).project();
+		ProjectSummary project = projects.getByName(organizationId, command.repository()).project();
 		if (keys.existsByProjectIdAndFingerprint(project.id(), key.fingerprint())) {
 			throw new BusinessRuleException("This key is already registered for '%s'".formatted(project.name()));
 		}
@@ -49,11 +48,15 @@ class DeployKeyServiceImpl implements DeployKeyService {
 
 	@Override
 	@Transactional
-	public void revoke(UUID id) {
-		if (!keys.existsById(id)) {
-			throw new ResourceNotFoundException("Deploy key", id);
-		}
-		keys.deleteById(id);
+	public void revoke(UUID organizationId, UUID id) {
+		DeployKey key = keys.findById(id)
+			.filter(k -> projectNames(organizationId).containsKey(k.getProjectId()))
+			.orElseThrow(() -> new ResourceNotFoundException("Deploy key", id));
+		keys.delete(key);
+	}
+
+	private Map<UUID, String> projectNames(UUID organizationId) {
+		return projects.findAll(organizationId).stream().collect(Collectors.toMap(ProjectSummary::id, ProjectSummary::name));
 	}
 
 	private static DeployKeyView toView(DeployKey k, String repository) {

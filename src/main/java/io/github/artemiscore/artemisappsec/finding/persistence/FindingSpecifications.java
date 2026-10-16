@@ -1,5 +1,6 @@
 package io.github.artemiscore.artemisappsec.finding.persistence;
 
+import java.util.Collection;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -27,6 +28,10 @@ public final class FindingSpecifications {
 
 	public static Specification<Finding> hasStatus(FindingStatus status) {
 		return (root, query, cb) -> cb.equal(root.get("status"), status);
+	}
+
+	public static Specification<Finding> inProjects(Collection<UUID> projectIds) {
+		return (root, query, cb) -> root.get("projectId").in(projectIds);
 	}
 
 	public static Specification<Finding> inProject(UUID projectId) {

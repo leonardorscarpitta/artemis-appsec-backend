@@ -14,12 +14,14 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import io.github.artemiscore.artemisappsec.organization.domain.Permission;
 import io.github.artemiscore.artemisappsec.organization.domain.Role;
 import io.github.artemiscore.artemisappsec.organization.service.InvitationView;
 import io.github.artemiscore.artemisappsec.organization.service.InviteCommand;
 import io.github.artemiscore.artemisappsec.organization.service.MemberView;
 import io.github.artemiscore.artemisappsec.organization.service.RoleView;
 import io.github.artemiscore.artemisappsec.organization.service.TeamService;
+import io.github.artemiscore.artemisappsec.organization.service.Tenant;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -32,6 +34,9 @@ class TeamController {
 	record ChangeRoleRequest(@NotNull Role role) {
 	}
 
+	record TransferOwnershipRequest(@NotNull UUID memberId) {
+	}
+
 	private final TeamService team;
 
 	TeamController(TeamService team) {
@@ -39,38 +44,56 @@ class TeamController {
 	}
 
 	@GetMapping("/members")
-	List<MemberView> members() {
-		return team.findMembers();
+	List<MemberView> members(Tenant tenant) {
+		return team.findMembers(tenant.organizationId());
 	}
 
 	@PatchMapping("/members/{id}")
-	MemberView changeRole(@PathVariable UUID id, @Valid @RequestBody ChangeRoleRequest request) {
-		return team.changeRole(id, request.role());
+	@RequiresPermission(Permission.TEAM)
+	MemberView changeRole(Tenant tenant, @PathVariable UUID id, @Valid @RequestBody ChangeRoleRequest request) {
+		return team.changeRole(tenant, id, request.role());
+	}
+
+	@DeleteMapping("/members/{id}")
+	@RequiresPermission(Permission.TEAM)
+	ResponseEntity<Void> remove(Tenant tenant, @PathVariable UUID id) {
+		team.removeMember(tenant, id);
+		return ResponseEntity.noContent().build();
+	}
+
+	@PostMapping("/members/transfer-ownership")
+	@RequiresPermission(Permission.BILLING)
+	List<MemberView> transferOwnership(Tenant tenant, @Valid @RequestBody TransferOwnershipRequest request) {
+		return team.transferOwnership(tenant, request.memberId());
 	}
 
 	@GetMapping("/invitations")
-	List<InvitationView> invitations() {
-		return team.findInvitations();
+	List<InvitationView> invitations(Tenant tenant) {
+		return team.findInvitations(tenant.organizationId());
 	}
 
 	@PostMapping("/invitations")
-	ResponseEntity<InvitationView> invite(@Valid @RequestBody InviteCommand command) {
-		InvitationView invitation = team.invite(command);
+	@RequiresPermission(Permission.TEAM)
+	ResponseEntity<InvitationView> invite(Tenant tenant, @Valid @RequestBody InviteCommand command) {
+		InvitationView invitation = team.invite(tenant, command);
 		return ResponseEntity.created(URI.create("/api/v1/invitations/" + invitation.id())).body(invitation);
 	}
 
 	@PostMapping("/invitations/{id}/resend")
-	InvitationView resend(@PathVariable UUID id) {
-		return team.resend(id);
+	@RequiresPermission(Permission.TEAM)
+	InvitationView resend(Tenant tenant, @PathVariable UUID id) {
+		return team.resend(tenant.organizationId(), id);
 	}
 
 	@DeleteMapping("/invitations/{id}")
-	ResponseEntity<Void> revoke(@PathVariable UUID id) {
-		team.revokeInvitation(id);
+	@RequiresPermission(Permission.TEAM)
+	ResponseEntity<Void> revoke(Tenant tenant, @PathVariable UUID id) {
+		team.revokeInvitation(tenant.organizationId(), id);
 		return ResponseEntity.noContent().build();
 	}
 
 	@GetMapping("/roles")
+	@WithoutOrganization
 	List<RoleView> roles() {
 		return team.roles();
 	}

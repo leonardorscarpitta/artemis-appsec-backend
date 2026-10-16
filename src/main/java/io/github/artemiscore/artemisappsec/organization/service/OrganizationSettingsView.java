@@ -25,8 +25,8 @@ public record OrganizationSettingsView(
 		Instant updatedAt) {
 
 	public record General(
-			@NotBlank @Size(max = 120) String name,
-			@NotBlank @Pattern(regexp = "^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$", message = "use lowercase letters, numbers and hyphens") String slug,
+			@NotBlank @Size(min = 2, max = 120) String name,
+			@NotBlank @Pattern(regexp = Slugs.PATTERN, message = "use 3 to 40 lowercase letters, numbers and hyphens") String slug,
 			@NotNull @Pattern(regexp = "^(en-US|pt-BR)$") String defaultLanguage,
 			@NotBlank @Size(max = 64) String timezone) {
 	}

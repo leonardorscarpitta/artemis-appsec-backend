@@ -27,6 +27,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		return problem(HttpStatus.NOT_FOUND, "Resource not found", ex.getMessage());
 	}
 
+	@ExceptionHandler(ApiProblemException.class)
+	ResponseEntity<ProblemDetail> handleApiProblem(ApiProblemException ex) {
+		ProblemDetail body = problem(ex.getStatus(), ex.getStatus().getReasonPhrase(), ex.getMessage());
+		body.setProperty("code", ex.getCode());
+		ex.getProperties().forEach(body::setProperty);
+		return ResponseEntity.status(ex.getStatus()).body(body);
+	}
+
 	@ExceptionHandler(BusinessRuleException.class)
 	ProblemDetail handleBusinessRule(BusinessRuleException ex) {
 		return problem(HttpStatus.CONFLICT, "Business rule violated", ex.getMessage());

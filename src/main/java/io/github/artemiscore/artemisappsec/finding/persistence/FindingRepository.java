@@ -19,7 +19,7 @@ public interface FindingRepository extends JpaRepository<Finding, UUID>, JpaSpec
 	@EntityGraph(attributePaths = "events")
 	Optional<Finding> findWithEventsById(UUID id);
 
-	List<Finding> findByStatusIn(Collection<FindingStatus> statuses);
+	List<Finding> findByProjectIdInAndStatusIn(Collection<UUID> projectIds, Collection<FindingStatus> statuses);
 
 	@EntityGraph(attributePaths = "events")
 	List<Finding> findByProjectIdAndFingerprintIn(UUID projectId, Collection<String> fingerprints);
@@ -30,8 +30,8 @@ public interface FindingRepository extends JpaRepository<Finding, UUID>, JpaSpec
 	@Query(value = "SELECT nextval('finding_reference_seq')", nativeQuery = true)
 	long nextReferenceNumber();
 
-	@Query("select f.projectId as projectId, count(f) as total from Finding f where f.status in :statuses group by f.projectId")
-	List<ProjectCount> countByProjectAndStatusIn(Collection<FindingStatus> statuses);
+	@Query("select f.projectId as projectId, count(f) as total from Finding f where f.projectId in :projectIds and f.status in :statuses group by f.projectId")
+	List<ProjectCount> countByProjectAndStatusIn(Collection<UUID> projectIds, Collection<FindingStatus> statuses);
 
 	interface ProjectCount {
 		UUID getProjectId();
