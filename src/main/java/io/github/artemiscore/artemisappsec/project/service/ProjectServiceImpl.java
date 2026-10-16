@@ -112,6 +112,7 @@ class ProjectServiceImpl implements ProjectService {
 			throw new BusinessRuleException("Each monorepo folder can be listed only once");
 		}
 		project.updateFolders(settings.folders().stream().map(f -> new Folder(f.path(), f.stack())).toList());
+		project.updateContainerImage(settings.containerImage());
 	}
 
 	private static void applyPipeline(Project project, List<StageUpdate> stages) {
@@ -130,13 +131,13 @@ class ProjectServiceImpl implements ProjectService {
 
 	private static ProjectSummary toSummary(Project p, Map<UUID, Long> openFindings) {
 		Long open = openFindings == null ? null : openFindings.getOrDefault(p.getId(), 0L);
-		return new ProjectSummary(p.getId(), p.getOrganizationId(), p.getName(), p.getSshUrl(), p.getBranch(), p.getStack(), folders(p), p.getScanSchedule(),
+		return new ProjectSummary(p.getId(), p.getOrganizationId(), p.getName(), p.getSshUrl(), p.getBranch(), p.getStack(), folders(p), p.getContainerImage(), p.getScanSchedule(),
 				p.getLastScanAt(), open);
 	}
 
 	private ProjectDetails toDetails(Project p) {
 		ProjectSettings settings = new ProjectSettings(p.getScanSchedule(), p.getAutomaticActions(), p.getDockerfileMode(),
-				p.getCustomDockerfile(), folders(p));
+				p.getCustomDockerfile(), folders(p), p.getContainerImage());
 		return new ProjectDetails(toSummary(p, openFindings(List.of(p))), settings, p.getPipeline().stream().map(ProjectServiceImpl::toView).toList());
 	}
 

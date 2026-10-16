@@ -171,7 +171,8 @@ Security tools run **self-hosted** in the `scanner` service (image `artemisappse
 | Dependencies (SCA, alternative) | Grype 0.120.1 | Apache-2.0 |
 | Dockerfile | Hadolint 2.15.1 | GPL-3.0 |
 | SBOM | Syft 1.54.1 | Apache-2.0 |
-| Container image, DAST | — not available yet (need an isolated builder / authorized running target); reported as skipped | |
+| Container image | Trivy 0.76.0 `image --image-src remote` on the **published** image in the repository's `containerImage` setting (e.g. `ghcr.io/acme/app:1.4`; skipped when empty). Pulled straight from the registry — never built or run, no container socket; the registry host must resolve to public addresses (default HTTPS port), max 700 MB compressed, layers unpacked in the in-memory workspace (`TMPDIR`) and wiped after the stage. Public registries only (anonymous pulls; Docker Hub rate-limits them). | Apache-2.0 |
+| DAST | — not available yet (needs an authorized, verified running target in its own sandbox); reported as skipped | |
 
 Licensing (see `scanner/THIRD_PARTY_NOTICES.md`, shipped in the image with every tool's license under `/usr/share/licenses/`): each tool is installed **unmodified** from its official release and executed as a **separate program**; no tool code is part of Artemis, so the GPL/AGPL terms do not extend to it. Vulnerability data comes from public databases (NVD, GitHub Advisory Database, OSV…): *This product uses data from the NVD API but is not endorsed or certified by the NVD.*
 
@@ -214,7 +215,7 @@ Repository URLs may be `https://host/owner/repo(.git)` or SSH (`git@host:owner/r
 
 | Method and path | Body | Response |
 | --- | --- | --- |
-| `POST /internal/v1/jobs/claim` | — | `204` when nothing is queued; `200` `{runId, number, repository: {name, cloneUrl, branch, paths}, stages: [{id, tool, failOn}], limits: {stageTimeoutSeconds, maxRepoSizeMb}}` |
+| `POST /internal/v1/jobs/claim` | — | `204` when nothing is queued; `200` `{runId, number, repository: {name, cloneUrl, branch, paths, image}, stages: [{id, tool, failOn}], limits: {stageTimeoutSeconds, maxRepoSizeMb}}` |
 | `POST /internal/v1/jobs/{runId}/source` | `{commitSha, commitMessage}` | `204` |
 | `PUT /internal/v1/jobs/{runId}/stages/{stage}` | `{status: completed\|skipped\|error, tool, durationSeconds, log, findings: [Finding]}` | `{status: passed\|warning\|failed\|skipped}`; `409` if the run is not running or the stage was already reported; `400` if the tool differs from the queued one |
 | `POST /internal/v1/jobs/{runId}/complete` | — | `204` |

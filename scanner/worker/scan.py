@@ -4,15 +4,21 @@ import time
 from pathlib import Path
 
 from .sanitize import safe_log
-from .tools import ADAPTERS, MAX_FINDINGS, NOT_AVAILABLE, ToolError
+from .tools import ADAPTERS, IMAGE_ADAPTERS, MAX_FINDINGS, NOT_AVAILABLE, ToolError
 
 DEFAULT_STAGE_TIMEOUT = 600
 
 
-def run_stage(stage_id: str, tool: str, src: Path, work: Path, timeout: int = DEFAULT_STAGE_TIMEOUT) -> dict:
+def run_stage(stage_id: str, tool: str, src: Path, work: Path, timeout: int = DEFAULT_STAGE_TIMEOUT,
+              image: str | None = None) -> dict:
     """Returns the contract's stage result: status completed|skipped|error, tool, durationSeconds, log, findings."""
     started = time.monotonic()
     adapter = ADAPTERS.get((stage_id, tool))
+    if (stage_id, tool) in IMAGE_ADAPTERS:
+        if not image:
+            return _result("skipped", tool, started, "No container image is set in the repository settings (General tab).")
+        image_adapter = IMAGE_ADAPTERS[(stage_id, tool)]
+        adapter = lambda _src, out, limit: image_adapter(image, out, limit)  # noqa: E731
     if stage_id in NOT_AVAILABLE:
         return _result("skipped", tool, started, NOT_AVAILABLE[stage_id])
     if adapter is None:

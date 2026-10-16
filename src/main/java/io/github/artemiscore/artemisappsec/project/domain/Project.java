@@ -68,6 +68,9 @@ public class Project {
 	@OneToMany(mappedBy = "project", cascade = CascadeType.ALL, orphanRemoval = true)
 	private List<PipelineStageConfig> pipeline = new ArrayList<>();
 
+	@Column(name = "container_image")
+	private String containerImage;
+
 	@ElementCollection(fetch = FetchType.EAGER)
 	@CollectionTable(name = "project_folder", joinColumns = @JoinColumn(name = "project_id"))
 	@OrderColumn(name = "position")
@@ -143,6 +146,14 @@ public class Project {
 
 	public String getBranch() {
 		return branch;
+	}
+
+	public String getContainerImage() {
+		return containerImage;
+	}
+
+	public void updateContainerImage(String containerImage) {
+		this.containerImage = containerImage;
 	}
 
 	public List<Folder> getFolders() {

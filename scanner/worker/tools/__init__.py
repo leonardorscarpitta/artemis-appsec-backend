@@ -14,10 +14,12 @@ ADAPTERS = {
     ("iac", "Trivy"): trivy.iac,
 }
 
-# Stages the runner cannot execute safely yet (they need an isolated build or a running target).
+# The image stage takes a registry reference instead of the source tree.
+IMAGE_ADAPTERS = {("image", "Trivy"): trivy.image}
+
+# Stages the runner cannot execute safely yet (they need a running, authorized target).
 NOT_AVAILABLE = {
-    "image": "Container image scanning is not available yet: it requires building the image in an isolated builder.",
     "dast": "Dynamic analysis (DAST) is not available yet: it requires a running, authorized staging target.",
 }
 
-__all__ = ["ADAPTERS", "NOT_AVAILABLE", "MAX_FINDINGS", "ToolError", "ToolResult"]
+__all__ = ["ADAPTERS", "IMAGE_ADAPTERS", "NOT_AVAILABLE", "MAX_FINDINGS", "ToolError", "ToolResult"]
