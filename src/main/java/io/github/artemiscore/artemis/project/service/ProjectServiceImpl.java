@@ -2,9 +2,11 @@ package io.github.artemiscore.artemis.project.service;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,19 +22,22 @@ import io.github.artemiscore.artemis.shared.error.ResourceNotFoundException;
 class ProjectServiceImpl implements ProjectService {
 
 	private final ProjectRepository projects;
+	private final ObjectProvider<ProjectFindingStats> findingStats;
 
-	ProjectServiceImpl(ProjectRepository projects) {
+	ProjectServiceImpl(ProjectRepository projects, ObjectProvider<ProjectFindingStats> findingStats) {
 		this.projects = projects;
+		this.findingStats = findingStats;
 	}
 
 	@Override
 	public List<ProjectSummary> findAll() {
-		return projects.findAllByOrderByNameAsc().stream().map(ProjectServiceImpl::toSummary).toList();
+		Map<UUID, Long> open = openFindings();
+		return projects.findAllByOrderByNameAsc().stream().map(p -> toSummary(p, open)).toList();
 	}
 
 	@Override
 	public Optional<ProjectSummary> findById(UUID id) {
-		return projects.findById(id).map(ProjectServiceImpl::toSummary);
+		return projects.findById(id).map(p -> toSummary(p, openFindings()));
 	}
 
 	@Override
@@ -92,15 +97,21 @@ class ProjectServiceImpl implements ProjectService {
 		return path.endsWith(".git") ? path.substring(0, path.length() - 4) : path;
 	}
 
-	private static ProjectSummary toSummary(Project p) {
-		return new ProjectSummary(p.getId(), p.getName(), p.getSshUrl(), p.getBranch(), p.getStack(), p.getScanSchedule(),
-				p.getLastScanAt());
+	private Map<UUID, Long> openFindings() {
+		ProjectFindingStats stats = findingStats.getIfAvailable();
+		return stats == null ? null : stats.openFindingsByProject();
 	}
 
-	private static ProjectDetails toDetails(Project p) {
+	private static ProjectSummary toSummary(Project p, Map<UUID, Long> openFindings) {
+		Long open = openFindings == null ? null : openFindings.getOrDefault(p.getId(), 0L);
+		return new ProjectSummary(p.getId(), p.getName(), p.getSshUrl(), p.getBranch(), p.getStack(), p.getScanSchedule(),
+				p.getLastScanAt(), open);
+	}
+
+	private ProjectDetails toDetails(Project p) {
 		ProjectSettings settings = new ProjectSettings(p.getScanSchedule(), p.getAutomaticActions(), p.getDockerfileMode(),
 				p.getCustomDockerfile());
-		return new ProjectDetails(toSummary(p), settings, p.getPipeline().stream().map(ProjectServiceImpl::toView).toList());
+		return new ProjectDetails(toSummary(p, openFindings()), settings, p.getPipeline().stream().map(ProjectServiceImpl::toView).toList());
 	}
 
 	private static PipelineStageView toView(PipelineStageConfig c) {

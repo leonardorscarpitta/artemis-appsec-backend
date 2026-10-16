@@ -74,7 +74,11 @@ Rules:
 | Module | Responsibility | Base path |
 | --- | --- | --- |
 | `project` | Monitored repositories, scan settings, pipeline configuration | `/api/v1/repositories`, `/api/v1/pipeline/stages` |
+| `finding` | Vulnerabilities (CVE per package and repository), status workflow and timeline; provides open counts to `project` via `ProjectFindingStats` | `/api/v1/findings` |
 | `pipelinerun` | Pipeline executions: list/filter, 7-day summary, run detail with stage logs, re-run and cancel | `/api/v1/pipeline-runs` |
+| `dashboard` | Read-only aggregation of findings and repositories | `/api/v1/dashboard/summary` |
+
+Query parameters accept the same enum values as the JSON (`?status=falsePositive&severity=critical`), via `shared/config/WireEnumConverterFactory`.
 
 JSON enum values match the frontend (`"Java + Spring"`, `"24h"`, `"sast"`, `"critical"`...).
 
