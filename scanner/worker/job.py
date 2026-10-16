@@ -30,12 +30,25 @@ def process(job: dict, api: ApiClient, config: Config) -> None:
             return
         api.source(run_id, sha, subject[:500])
 
+        directory = repo.get("path") or ""
+        if directory:
+            target = (src / directory).resolve()
+            if not target.is_relative_to(src.resolve()) or not target.is_dir():
+                api.fail(run_id, f"Directory '{directory}' was not found on branch {repo.get('branch', 'main')}.")
+                return
+            src = target
+
         failed_stage = None
         for stage in job.get("stages", []):
             if failed_stage:
                 api.stage(run_id, stage["id"], not_run(stage, failed_stage))
                 continue
             result = run_stage(stage["id"], stage.get("tool", ""), src, work, timeout)
+            if directory:
+                # Paths stay relative to the repository root, not to the scanned folder.
+                for item in result["findings"]:
+                    if item.get("location"):
+                        item["location"]["path"] = f"{directory}/{item['location']['path']}"
             status = api.stage(run_id, stage["id"], result).get("status", result["status"])
             log.info("run %s: %s/%s -> %s (%d finding(s))", job.get("number"), stage["id"], result["tool"],
                      status, len(result["findings"]))

@@ -25,6 +25,9 @@ public interface ProjectService {
 
 	ProjectDetails updatePipeline(UUID organizationId, String name, List<StageUpdate> stages);
 
+	/** Deletes the repository and everything recorded for it (findings, runs, reports, keys, risk acceptances). */
+	void delete(UUID organizationId, String name);
+
 	List<PipelineStageView> defaultPipeline();
 
 	void recordScan(UUID projectId, Instant finishedAt);

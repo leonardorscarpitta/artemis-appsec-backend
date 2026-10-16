@@ -214,11 +214,15 @@ Repository URLs may be `https://host/owner/repo(.git)` or SSH (`git@host:owner/r
 
 | Method and path | Body | Response |
 | --- | --- | --- |
-| `POST /internal/v1/jobs/claim` | — | `204` when nothing is queued; `200` `{runId, number, repository: {name, cloneUrl, branch}, stages: [{id, tool, failOn}], limits: {stageTimeoutSeconds, maxRepoSizeMb}}` |
+| `POST /internal/v1/jobs/claim` | — | `204` when nothing is queued; `200` `{runId, number, repository: {name, cloneUrl, branch, path}, stages: [{id, tool, failOn}], limits: {stageTimeoutSeconds, maxRepoSizeMb}}` |
 | `POST /internal/v1/jobs/{runId}/source` | `{commitSha, commitMessage}` | `204` |
 | `PUT /internal/v1/jobs/{runId}/stages/{stage}` | `{status: completed\|skipped\|error, tool, durationSeconds, log, findings: [Finding]}` | `{status: passed\|warning\|failed\|skipped}`; `409` if the run is not running or the stage was already reported; `400` if the tool differs from the queued one |
 | `POST /internal/v1/jobs/{runId}/complete` | — | `204` |
 | `POST /internal/v1/jobs/{runId}/fail` | `{reason}` | `204` (e.g. the repository could not be cloned) |
+
+**Monorepos:** a repository may set an optional `directory` on creation (`POST /api/v1/repositories` `{…, directory: "frontend"}`; relative path, letters/digits/`.`/`_`/`-` segments, no `.`/`..`, max 120 chars; immutable). Its name becomes `<repo>-<directory with / → ->` so the same URL can be added once per folder. The claim sends it as `repository.path`; the runner scans only that folder (fails the run if it does not exist on the branch) and prefixes finding paths with it so they stay relative to the repository root.
+
+**Removing a repository:** `DELETE /api/v1/repositories/{name}` (`pipelines` permission) → `204`; the database cascades its findings, runs, reports, deploy keys and risk acceptances.
 
 Stages run in pipeline order and **a failed stage stops the pipeline**: as soon as the API answers `failed` for a stage, the runner does not run the remaining stages and reports them as `skipped` ("Not run: the <stage> stage failed"), then completes the run (which ends `failed`). Warnings do not stop it.
 

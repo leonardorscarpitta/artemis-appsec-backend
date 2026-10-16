@@ -9,7 +9,8 @@ import io.github.artemiscore.artemisappsec.shared.domain.Stage;
 /** What the scanner runner must do for one claimed run. */
 public record JobAssignment(UUID runId, long number, Repository repository, List<StageJob> stages, Limits limits) {
 
-	public record Repository(String name, String cloneUrl, String branch) {
+	/** @param path folder to scan inside the clone, or null for the whole repository */
+	public record Repository(String name, String cloneUrl, String branch, String path) {
 	}
 
 	public record StageJob(Stage id, String tool, FailThreshold failOn) {

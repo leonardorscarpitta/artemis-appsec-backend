@@ -43,6 +43,8 @@ public class Project {
 	@Column(nullable = false)
 	private String branch;
 
+	private String directory;
+
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false)
 	private Stack stack;
@@ -76,12 +78,13 @@ public class Project {
 	protected Project() {
 	}
 
-	public Project(UUID organizationId, String name, String sshUrl, String branch, Stack stack) {
+	public Project(UUID organizationId, String name, String sshUrl, String branch, String directory, Stack stack) {
 		this.id = UUID.randomUUID();
 		this.organizationId = organizationId;
 		this.name = name;
 		this.sshUrl = sshUrl;
 		this.branch = branch;
+		this.directory = directory;
 		this.stack = stack;
 		this.scanSchedule = ScanSchedule.EVERY_24_HOURS;
 		this.dockerfileMode = DockerfileMode.RECOMMENDED;
@@ -137,6 +140,10 @@ public class Project {
 
 	public String getBranch() {
 		return branch;
+	}
+
+	public String getDirectory() {
+		return directory;
 	}
 
 	public Stack getStack() {
