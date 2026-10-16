@@ -60,7 +60,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /usr/share/licenses/git && cp /usr/share/doc/git/copyright /usr/share/licenses/git/COPYING \
     && groupadd --system --gid 10001 runner \
-    && useradd --system --uid 10001 --gid runner --home-dir /nonexistent --shell /usr/sbin/nologin runner
+    && useradd --system --uid 10001 --gid runner --home-dir /nonexistent --shell /usr/sbin/nologin runner \
+    && mkdir -p /workspace /cache/trivy /cache/grype \
+    && chown -R runner:runner /workspace /cache
 
 COPY --from=tools /opt/tools/bin/ /usr/local/bin/
 COPY --from=tools /opt/tools/licenses/ /usr/share/licenses/

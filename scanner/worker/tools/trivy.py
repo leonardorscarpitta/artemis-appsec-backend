@@ -11,6 +11,8 @@ ECOSYSTEMS = {
     "bundler": "rubygems", "gemspec": "rubygems",
 }
 COMMON = ["--format", "json", "--quiet", "--skip-version-check", "--timeout", "10m"]
+# Single-threaded filesystem scans keep memory within the runner limit (`trivy config` has no such flag).
+FS_ONLY = ["--parallel", "1"]
 
 
 def _cvss(vuln: dict) -> tuple[float | None, str | None]:
@@ -24,7 +26,7 @@ def _cvss(vuln: dict) -> tuple[float | None, str | None]:
 
 def vulnerabilities(src: Path, out: Path, timeout: int) -> ToolResult:
     report = out / "trivy-vuln.json"
-    run(["trivy", "fs", "--scanners", "vuln", *COMMON, "--output", str(report), str(src)], timeout, out)
+    run(["trivy", "fs", "--scanners", "vuln", *COMMON, *FS_ONLY, "--output", str(report), str(src)], timeout, out)
     findings = []
     for result in (read_json(report, {}) or {}).get("Results") or []:
         ecosystem = ECOSYSTEMS.get(result.get("Type", ""), result.get("Type") or "other")
@@ -46,7 +48,7 @@ def vulnerabilities(src: Path, out: Path, timeout: int) -> ToolResult:
 
 def licenses(src: Path, out: Path, timeout: int) -> ToolResult:
     report = out / "trivy-license.json"
-    run(["trivy", "fs", "--scanners", "license", *COMMON, "--output", str(report), str(src)], timeout, out)
+    run(["trivy", "fs", "--scanners", "license", *COMMON, *FS_ONLY, "--output", str(report), str(src)], timeout, out)
     findings = []
     for result in (read_json(report, {}) or {}).get("Results") or []:
         for lic in result.get("Licenses") or []:

@@ -6,11 +6,11 @@ rules:
       Dynamic code execution with eval/new Function. If any part of the input comes from users,
       this allows arbitrary code execution. Use safe parsing (JSON.parse) or explicit logic instead.
     metadata: { title: Dynamic code execution, cwe: "CWE-95: Eval Injection", artemis-severity: high }
-    pattern-either:
-      - pattern: eval($X)
-      - pattern: new Function(...)
-      - pattern: setTimeout("...", ...)
-    pattern-not: eval("...")
+    patterns:
+      - pattern-either:
+          - pattern: eval($X)
+          - pattern: new Function(...)
+      - pattern-not: eval("...")
 
   - id: js-child-process-command-injection
     languages: [javascript, typescript]
@@ -33,14 +33,14 @@ rules:
     message: >-
       SQL query built by string concatenation or interpolation. Use parameterized queries / prepared statements.
     metadata: { title: SQL injection, cwe: "CWE-89: SQL Injection", artemis-severity: high }
-    pattern-either:
-      - pattern: $DB.query("$SQL" + $X, ...)
-      - pattern: $DB.query(`$SQL${$X}...`, ...)
-      - pattern: $DB.raw("$SQL" + $X, ...)
-      - pattern: $DB.execute("$SQL" + $X, ...)
-    metavariable-regex:
-      metavariable: $SQL
-      regex: (?i)\b(select|insert|update|delete|where)\b
+    patterns:
+      - pattern-either:
+          - pattern: $DB.query("$SQL" + $X, ...)
+          - pattern: $DB.raw("$SQL" + $X, ...)
+          - pattern: $DB.execute("$SQL" + $X, ...)
+      - metavariable-regex:
+          metavariable: $SQL
+          regex: (?i)\b(select|insert|update|delete|where)\b
 
   - id: js-innerhtml-xss
     languages: [javascript, typescript]
@@ -49,13 +49,14 @@ rules:
       Assigning non-literal HTML to innerHTML/outerHTML or document.write can lead to cross-site scripting.
       Use textContent or a sanitizer such as DOMPurify.
     metadata: { title: DOM-based XSS sink, cwe: "CWE-79: Cross-site Scripting" }
-    pattern-either:
-      - pattern: $EL.innerHTML = $X
-      - pattern: $EL.outerHTML = $X
-      - pattern: document.write($X)
-    pattern-not: $EL.innerHTML = "..."
-    pattern-not: $EL.outerHTML = "..."
-    pattern-not: document.write("...")
+    patterns:
+      - pattern-either:
+          - pattern: $EL.innerHTML = $X
+          - pattern: $EL.outerHTML = $X
+          - pattern: document.write($X)
+      - pattern-not: $EL.innerHTML = "..."
+      - pattern-not: $EL.outerHTML = "..."
+      - pattern-not: document.write("...")
 
   - id: react-dangerously-set-inner-html
     languages: [javascript, typescript]
@@ -112,10 +113,11 @@ rules:
     severity: WARNING
     message: File path built from request data. Normalize it and check it stays inside the intended directory.
     metadata: { title: Path traversal, cwe: "CWE-22: Path Traversal" }
-    pattern-either:
-      - pattern: $FS.readFile(<... $REQ.$PARAMS ...>, ...)
-      - pattern: $FS.readFileSync(<... $REQ.$PARAMS ...>, ...)
-      - pattern: $RES.sendFile(<... $REQ.$PARAMS ...>, ...)
-    metavariable-regex:
-      metavariable: $PARAMS
-      regex: ^(params|query|body)$
+    patterns:
+      - pattern-either:
+          - pattern: $FS.readFile(<... $REQ.$PARAMS.$F ...>, ...)
+          - pattern: $FS.readFileSync(<... $REQ.$PARAMS.$F ...>, ...)
+          - pattern: $RES.sendFile(<... $REQ.$PARAMS.$F ...>, ...)
+      - metavariable-regex:
+          metavariable: $PARAMS
+          regex: ^(params|query|body)$

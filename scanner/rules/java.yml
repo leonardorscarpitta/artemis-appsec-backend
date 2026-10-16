@@ -4,17 +4,18 @@ rules:
     severity: ERROR
     message: SQL built by string concatenation. Use PreparedStatement parameters or named parameters in JPA/JDBC templates.
     metadata: { title: SQL injection, cwe: "CWE-89: SQL Injection", artemis-severity: high }
-    pattern-either:
-      - pattern: (java.sql.Statement $S).executeQuery("$SQL" + $X)
-      - pattern: (java.sql.Statement $S).execute("$SQL" + $X)
-      - pattern: (java.sql.Statement $S).executeUpdate("$SQL" + $X)
-      - pattern: $EM.createQuery("$SQL" + $X, ...)
-      - pattern: $EM.createNativeQuery("$SQL" + $X, ...)
-      - pattern: $T.queryForObject("$SQL" + $X, ...)
-      - pattern: $T.query("$SQL" + $X, ...)
-    metavariable-regex:
-      metavariable: $SQL
-      regex: (?i)\b(select|insert|update|delete|where|from)\b
+    patterns:
+      - pattern-either:
+          - pattern: (java.sql.Statement $S).executeQuery("$SQL" + $X + ...)
+          - pattern: (java.sql.Statement $S).execute("$SQL" + $X + ...)
+          - pattern: (java.sql.Statement $S).executeUpdate("$SQL" + $X + ...)
+          - pattern: $EM.createQuery("$SQL" + $X + ..., ...)
+          - pattern: $EM.createNativeQuery("$SQL" + $X + ..., ...)
+          - pattern: $T.queryForObject("$SQL" + $X + ..., ...)
+          - pattern: $T.query("$SQL" + $X + ..., ...)
+      - metavariable-regex:
+          metavariable: $SQL
+          regex: (?i)\b(select|insert|update|delete|where|from)\b
 
   - id: java-runtime-exec
     languages: [java]

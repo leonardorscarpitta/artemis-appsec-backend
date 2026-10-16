@@ -12,7 +12,7 @@ def scan(src: Path, out: Path, timeout: int) -> ToolResult:
     run(
         ["semgrep", "scan", "--config", RULES_DIR, "--json", "--output", str(report), "--metrics=off",
          "--disable-version-check", "--quiet", "--timeout", "30", "--max-target-bytes", "1000000",
-         "--jobs", "2", str(src)],
+         "--jobs", "1", "--max-memory", "1200", str(src)],
         timeout, out, ok_codes=(0, 1),
     )
     data = read_json(report, {}) or {}
