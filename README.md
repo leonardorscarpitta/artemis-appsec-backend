@@ -45,6 +45,8 @@ The `dev` profile loads demo data (`src/main/resources/db/seed`). Set `AUTH_ENAB
 
 Production image: `docker build -t artemisappsec-api .` (multi-stage, non-root, layered jar).
 
+**Memory limits** (the stack is sized for a 16 GB machine, ~4.3 GB in total): `db` 512 MB, `api` 1.5 GB (Maven `-Xmx384m`, application JVM `-Xmx640m -XX:+UseSerialGC`), `authelia` 128 MB, `auth-proxy` 64 MB, `scanner` 2 GB (+ 2 CPUs, 512 processes).
+
 ## Authentication (Authelia)
 
 Authelia is the OpenID Connect provider; the API is an OAuth2 resource server.
@@ -119,6 +121,44 @@ Security notes for `organization`:
 - The organization is a single row (`organization_settings`): one organization per deployment.
 
 JSON enum values match the frontend (`"Java + Spring"`, `"24h"`, `"sast"`, `"critical"`...).
+
+## Scanner runner
+
+Security tools run **self-hosted** in the `scanner` service (image `artemisappsec/runner`, built from `scanner/`). No cloud scanning service is used.
+
+| Stage | Tool | License |
+| --- | --- | --- |
+| Secrets | Gitleaks 8.30.1 | MIT |
+| SAST | Semgrep CE 1.181.0 (engine) with Artemis's own rules in `scanner/rules/` — never the Semgrep Registry | LGPL-2.1 |
+| Dependencies (SCA), licenses, IaC, Dockerfile | Trivy 0.76.0 | Apache-2.0 |
+| Dependencies (SCA, alternative) | Grype 0.120.1 | Apache-2.0 |
+| Dockerfile | Hadolint 2.15.1 | GPL-3.0 |
+| SBOM | Syft 1.54.1 | Apache-2.0 |
+| Container image, DAST | — not available yet (need an isolated builder / authorized running target); reported as skipped | |
+
+Licensing (see `scanner/THIRD_PARTY_NOTICES.md`, shipped in the image with every tool's license under `/usr/share/licenses/`): each tool is installed **unmodified** from its official release and executed as a **separate program**; no tool code is part of Artemis, so the GPL/AGPL terms do not extend to it. Vulnerability data comes from public databases (NVD, GitHub Advisory Database, OSV…): *This product uses data from the NVD API but is not endorsed or certified by the NVD.*
+
+**How it works.** The worker (`scanner/worker/`, Python standard library only) polls the API's internal job endpoints (`/internal/v1/jobs/…`, `Authorization: Bearer $SCANNER_TOKEN`), clones the repository, runs the enabled stages, normalizes every tool's output to one finding format and reports it back. The API decides stage/run status from the configured fail thresholds.
+
+**Security and privacy measures**
+
+- *Supply chain:* pinned tool versions; every download verified against a pinned SHA-256 (cross-checked with the official checksum files where published); multi-stage build, no build tools in the final image.
+- *Sandbox:* non-root user (uid 10001), read-only root filesystem, all Linux capabilities dropped, `no-new-privileges`, memory/CPU/process limits, no Docker socket, no database credentials. The `scanner` network is shared only with the API — the database and Authelia are unreachable.
+- *Clone:* public **HTTPS** repositories only for now (SSH/private repositories come later); credentials in URLs, non-default ports and hosts resolving to private, loopback, link-local or metadata addresses are refused; `--depth 1 --single-branch --no-tags`, no submodules, hooks, LFS, symlinks or redirects; size limit (500 MB) and timeouts. No repository code is ever executed (no installs, no builds).
+- *Privacy:* source code lives in an in-memory workspace that is deleted after each run (and on start-up). Secrets are redacted by Gitleaks and the worker never forwards secret values or code snippets — only rule, file and line. Logs are size-limited and redacted. Telemetry and update checks are disabled (`--metrics=off`, `*_CHECK_FOR_APP_UPDATE=false`); the only outbound traffic is the git clone and vulnerability-database downloads, which contain no user data.
+
+**Run it.** Set `SCANNER_TOKEN` in `.env` (`openssl rand -hex 32`, at least 32 characters) and `docker compose up -d`; the first scan downloads the Trivy/Grype databases into the `scanner_cache` volume.
+
+**Local mode** (no API, for testing tools and rules):
+
+```sh
+./scanner/test-fixtures/make-secret-fixture.sh     # generates a fake credential (git-ignored)
+docker run --rm --read-only --cap-drop ALL --tmpfs /tmp --tmpfs /workspace:uid=10001,gid=10001 \
+  -v artemis-scan-cache:/cache -v "$PWD/scanner/test-fixtures/vulnerable-app:/fixture:ro" \
+  artemisappsec/runner:dev scan --dir /fixture                # or: scan --url https://github.com/org/repo.git --branch main
+```
+
+Options: `--stages secrets,sast,...` and `--tool sca=Grype` / `--tool dockerfile=Trivy`. Output is the normalized JSON sent to the API.
 
 ## Scanning (API side)
 
