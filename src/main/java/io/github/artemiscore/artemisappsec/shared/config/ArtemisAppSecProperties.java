@@ -5,7 +5,7 @@ import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "artemisappsec")
-public record ArtemisAppSecProperties(Security security, Cors cors, Billing billing) {
+public record ArtemisAppSecProperties(Security security, Cors cors, Billing billing, Scanner scanner) {
 
 	public record Security(boolean authEnabled, Oidc oidc) {
 	}
@@ -20,6 +20,30 @@ public record ArtemisAppSecProperties(Security security, Cors cors, Billing bill
 
 	/** @param enabled whether plans can be changed; while false the API only reports plans and the current one */
 	public record Billing(boolean enabled) {
+	}
+
+	/**
+	 * Scanner runner integration.
+	 *
+	 * @param token shared secret the runner presents to the internal job API; the API is disabled when shorter than 32 chars
+	 * @param stageTimeoutSeconds maximum time a single tool may run
+	 * @param maxRepoSizeMb maximum size of a cloned repository
+	 * @param staleRunMinutes running runs older than this are failed
+	 */
+	public record Scanner(String token, int stageTimeoutSeconds, int maxRepoSizeMb, int staleRunMinutes) {
+
+		public static final int MIN_TOKEN_LENGTH = 32;
+
+		public Scanner {
+			token = token == null ? "" : token.trim();
+			stageTimeoutSeconds = stageTimeoutSeconds > 0 ? stageTimeoutSeconds : 600;
+			maxRepoSizeMb = maxRepoSizeMb > 0 ? maxRepoSizeMb : 500;
+			staleRunMinutes = staleRunMinutes > 0 ? staleRunMinutes : 60;
+		}
+
+		public boolean enabled() {
+			return token.length() >= MIN_TOKEN_LENGTH;
+		}
 	}
 
 	public record Cors(List<String> allowedOrigins) {

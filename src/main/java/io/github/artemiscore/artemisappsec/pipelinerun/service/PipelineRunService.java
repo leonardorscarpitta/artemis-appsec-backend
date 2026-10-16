@@ -1,6 +1,11 @@
 package io.github.artemiscore.artemisappsec.pipelinerun.service;
 
+import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+import io.github.artemiscore.artemisappsec.pipelinerun.domain.StageStatus;
 
 /** Public contract of the pipeline run service. */
 public interface PipelineRunService {
@@ -15,4 +20,25 @@ public interface PipelineRunService {
 	RunDetails rerun(long number, String actor);
 
 	RunDetails cancel(long number);
+
+	/** Queues a manual scan of a repository with its current pipeline configuration (counts against the plan's quota). */
+	RunDetails queueScan(String repository, String actor);
+
+	// --- Scanner runner (internal job API) ---
+
+	/** Moves the oldest queued run to running and returns it, or empty when nothing is queued. */
+	Optional<ClaimedRun> claimNext();
+
+	RunJob job(UUID runId);
+
+	void recordSource(UUID runId, String commitSha, String commitMessage);
+
+	StageStatus recordStage(UUID runId, StageResult result);
+
+	void complete(UUID runId);
+
+	void fail(UUID runId, String reason);
+
+	/** Fails runs that have been running for longer than {@code maxDuration}; returns how many. */
+	int failStaleRuns(Duration maxDuration);
 }
