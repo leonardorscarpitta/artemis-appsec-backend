@@ -32,6 +32,11 @@ final class JobRequests {
 	record FailRequest(@NotBlank @Size(max = 500) String reason) {
 	}
 
+	/** {@code hostKey}: the known_hosts line(s) the runner used, recorded for non-pinned servers on first contact. */
+	record AccessCheckResult(@NotNull @Pattern(regexp = "^(ok|failed)$") String status, @Size(max = 2000) String message,
+			@Size(max = 16_384) String hostKey) {
+	}
+
 	record StageReportRequest(@NotNull StageOutcome status, @NotBlank @Size(max = 64) String tool,
 			@Min(0) @Max(86_400) int durationSeconds, @Size(max = 65_536) String log,
 			@Size(max = 5_000) List<@NotNull @Valid FindingPayload> findings) {

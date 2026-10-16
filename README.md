@@ -114,6 +114,7 @@ All environment-specific values come from environment variables (secrets in prod
 | `KC_SMTP_HOST`, `KC_SMTP_PORT`, `KC_SMTP_FROM` | Outgoing e-mail for password reset (Mailpit by default) |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated origins allowed to call `/api/**` |
 | `SCANNER_TOKEN` | Shared secret of the scanner runner (≥ 32 random characters; the internal job API is disabled otherwise). Also `SCANNER_STAGE_TIMEOUT_SECONDS` (600), `SCANNER_MAX_REPO_SIZE_MB` (500), `SCANNER_STALE_RUN_MINUTES` (60) |
+| `DEPLOY_KEY_ENCRYPTION_KEY`, `DEPLOY_KEY_ENCRYPTION_KEY_ID` | Master key (base64 of 32 random bytes, `openssl rand -base64 32`) and its label (`v1`) for encrypting the private deploy keys of private repositories. Without a valid key, private repositories are disabled (`503 deploy-keys-disabled`) |
 | `BILLING_ENABLED` | Allows plan changes (default `false`). Paid plans still require a payment platform, which is not integrated yet |
 
 ## Architecture
@@ -182,7 +183,7 @@ Licensing (see `scanner/THIRD_PARTY_NOTICES.md`, shipped in the image with every
 
 - *Supply chain:* pinned tool versions; every download verified against a pinned SHA-256 (cross-checked with the official checksum files where published); multi-stage build, no build tools in the final image.
 - *Sandbox:* non-root user (uid 10001), read-only root filesystem, all Linux capabilities dropped, `no-new-privileges`, memory/CPU/process limits, no Docker socket, no database credentials. The `scanner` network is shared only with the API — the database and Keycloak are unreachable.
-- *Clone:* public **HTTPS** repositories only for now (SSH/private repositories come later); credentials in URLs, non-default ports and hosts resolving to private, loopback, link-local or metadata addresses are refused; `--depth 1 --single-branch --no-tags`, no submodules, hooks, LFS, symlinks or redirects; size limit (500 MB) and timeouts. No repository code is ever executed (no installs, no builds).
+- *Clone:* public **HTTPS** repositories without credentials, and **private repositories over SSH** with the repository's Artemis-generated deploy key (see "Private repositories"); credentials in URLs, non-default HTTPS ports and hosts resolving to private, loopback, link-local or metadata addresses are refused; `--depth 1 --single-branch --no-tags`, no submodules, hooks, LFS, symlinks or redirects; size limit (500 MB) and timeouts. No repository code is ever executed (no installs, no builds).
 - *Privacy:* source code lives in an in-memory workspace that is deleted after each run (and on start-up). Secrets are redacted by Gitleaks and the worker never forwards secret values or code snippets — only rule, file and line. Logs are size-limited and redacted. Telemetry and update checks are disabled (`--metrics=off`, `*_CHECK_FOR_APP_UPDATE=false`); the only outbound traffic is the git clone and vulnerability-database downloads, which contain no user data. Trivy runs with `--offline-scan`, so it never asks package registries about the repository's dependencies (e.g. Maven Central for parent POMs, which also rate-limits with HTTP 429); the trade-off is that versions defined only in a remote parent POM/BOM may stay unresolved.
 
 **Run it.** Set `SCANNER_TOKEN` in `.env` (`openssl rand -hex 32`, at least 32 characters) and `docker compose up -d`; the first scan downloads the Trivy/Grype databases into the `scanner_cache` volume.
@@ -202,12 +203,33 @@ Options: `--stages secrets,sast,...` and `--tool sca=Grype` / `--tool dockerfile
 
 Scans run in the separate scanner runner (see "Scanner runner"); the API only queues work and records results.
 
-1. A scan is queued by `POST /api/v1/repositories/{name}/scans` (manual, counts against the plan's monthly quota → `409` when exhausted), by re-running a run, or automatically when a repository is connected. Runs keep a snapshot of each enabled stage: tool and fail threshold.
-2. The runner claims the oldest queued run (`SELECT … FOR UPDATE SKIP LOCKED`, so several runners never share a run). Stages that are not available yet (`image`, `dast`) are skipped at that point.
+1. A scan is queued by `POST /api/v1/repositories/{name}/scans` (manual, counts against the plan's monthly quota → `409` when exhausted), by re-running a run, or automatically when a public repository is connected (private ones wait until their deploy key is added). Runs keep a snapshot of each enabled stage: tool and fail threshold.
+2. The runner claims the oldest queued run (`SELECT … FOR UPDATE SKIP LOCKED`, so several runners never share a run). Stages that are not available yet (`dast`) are skipped at that point.
 3. For each stage the runner reports `completed`, `skipped` or `error` plus normalized findings. The API decides the stage status: `error` → `failed`; `completed` → `failed` when a finding reaches the stage's fail threshold (`failedBy`), `warning` when there are findings below it, `passed` otherwise.
 4. On `complete`, stages that were not reported are skipped and the run becomes `success` or `failed`; the repository's last scan time is updated. Runs still `running` after `SCANNER_STALE_RUN_MINUTES` (default 60) are failed by a scheduled sweep.
 
-Repository URLs may be `https://host/owner/repo(.git)` or SSH (`git@host:owner/repo.git`, `ssh://…`). The runner clones public HTTPS repositories only for now.
+Repository URLs may be `https://host/owner/repo(.git)` (public, cloned without credentials) or SSH (`git@host:owner/repo.git`, `ssh://[git@]host[:port]/owner/repo(.git)`): **private** repositories, cloned with an Artemis-generated deploy key — see "Private repositories".
+
+### Private repositories
+
+1. **Key per repository.** Connecting an SSH URL generates an **ed25519** key pair in the API (JDK `Ed25519`), stores the public key and the **OpenSSH private key encrypted with AES-256-GCM** (`deploy_key.private_key_ciphertext/_nonce/encryption_key_id`; random 96-bit nonce; AAD = deploy key id + key id, so ciphertexts cannot be moved between rows) with the master key `DEPLOY_KEY_ENCRYPTION_KEY`. The plaintext exists only in memory; it is never returned by the public API, logged or put in exceptions (`SshCredentials.toString()` is redacted). No first scan is queued: the repository waits for its key to be added (`accessStatus: pending`).
+2. **The user adds the public key** to the repository as a **read-only deploy key** (GitHub: Settings → Deploy keys; GitLab: Settings → Repository → Deploy keys; Bitbucket: Repository settings → Access keys) and asks for an **access check**. The runner runs `git ls-remote --heads <url> refs/heads/<branch>` with the key; the result (`ok` only when the branch exists) sets `accessStatus` to `verified` or `failed` with a sanitized message (permission denied, host key mismatch, repository/branch not found, unreachable).
+3. **Host keys are always verified** (`StrictHostKeyChecking=yes`). `github.com`, `gitlab.com` and `bitbucket.org` use the official keys pinned in `scanner/known_hosts` (collected with `ssh-keyscan` and checked against each provider's documented fingerprints; GitHub's also against `https://api.github.com/meta` — sources in the file header). Other servers: the first **successful** access check records the key read with `ssh-keyscan` (trust on first use, shown to users with its SHA256 fingerprint) and every later connection must match it; scans of such a server fail until a check has recorded it.
+4. **Scans** of private repositories get `credentials` in the claim; the runner writes the key to the in-memory workspace (mode 0600), clones through `GIT_SSH_COMMAND` (`-F /dev/null`, `IdentitiesOnly`, `IdentityAgent=none`, `BatchMode`, publickey only, own `known_hosts`, timeouts) with only the `ssh` protocol allowed, and **deletes the key right after the clone**, before any tool runs. A run of a private repository without a key, or whose host key is unknown, is failed at claim time and never reaches the runner.
+5. **Rotation and revocation.** `POST /repositories/{name}/access/key` generates a new key and deletes the old one (status back to `pending`); deleting the managed key under `/deploy-keys` does the same without a replacement. Removing the repository deletes its keys (cascade) — users should also remove the deploy key from the provider. Every release of a key to the scanner is logged with its fingerprint and purpose (`run #N` / `access check <id>`) and updates `lastUsedAt`.
+6. **Master key.** Keep `DEPLOY_KEY_ENCRYPTION_KEY` in a secrets manager and back it up: losing it means generating new deploy keys for every private repository. Its id (`DEPLOY_KEY_ENCRYPTION_KEY_ID`) is stored with every ciphertext; a key whose id differs from the server's cannot be decrypted (rotate the master key by introducing a new id and rotating each repository's deploy key — re-encryption tooling is not built yet).
+
+Public endpoints (organization-scoped):
+
+| Method and path | Permission | Response |
+| --- | --- | --- |
+| `GET /api/v1/repositories/{name}/access` | viewFindings | `{type: "public"\|"ssh", deployKey: {id, publicKey, fingerprint, createdAt, lastUsedAt} \| null, host, hostKeyFingerprint, hostKeyPinned, lastCheck: {id, status: queued\|running\|ok\|failed, message, requestedAt, finishedAt} \| null}` (public repositories: only `type`, the rest `null`/`false`) |
+| `POST /api/v1/repositories/{name}/access/key` | integrations | `200` access view with the new key; `409` for public repositories; `503 deploy-keys-disabled` without a master key |
+| `POST /api/v1/repositories/{name}/access/checks` | pipelines | `202` access view (an already queued/running check is reused); `409` when there is no key |
+| `GET /api/v1/deploy-keys` | viewFindings | items `{id, name, keyType, fingerprint, repository, addedAt, lastUsedAt, managed, publicKey}` — `managed` keys were generated by Artemis (`publicKey` set); older public-only keys cannot clone. Keys are no longer pasted (`POST` removed) |
+| `DELETE /api/v1/deploy-keys/{id}` | integrations | `204` |
+
+Repository summaries also carry `access` (`public` \| `ssh`) and `accessStatus` (`pending` \| `verified` \| `failed`, `null` for public).
 
 ### Internal job API
 
@@ -215,7 +237,8 @@ Repository URLs may be `https://host/owner/repo(.git)` or SSH (`git@host:owner/r
 
 | Method and path | Body | Response |
 | --- | --- | --- |
-| `POST /internal/v1/jobs/claim` | — | `204` when nothing is queued; `200` `{runId, number, repository: {name, cloneUrl, branch, paths, image}, stages: [{id, tool, failOn}], limits: {stageTimeoutSeconds, maxRepoSizeMb}}` |
+| `POST /internal/v1/jobs/claim` | — | `204` when nothing is queued. Access checks are handed out first: `200` `{type: "access-check", checkId, repository: {name, cloneUrl, branch, access: "ssh"}, credentials: {sshPrivateKey, knownHosts}}`; otherwise the oldest run: `{type: "scan", runId, number, repository: {name, cloneUrl, branch, paths, image, access: "public"\|"ssh"}, credentials: {sshPrivateKey, knownHosts} \| null, stages: [{id, tool, failOn}], limits: {stageTimeoutSeconds, maxRepoSizeMb}}`. `knownHosts` is the recorded host key of non-pinned servers (else `null`) |
+| `PUT /internal/v1/access-checks/{checkId}` | `{status: ok\|failed, message, hostKey}` | `204`; `hostKey` (the `ssh-keyscan` lines used) is validated and recorded only on `ok` for non-pinned servers without one; `409` if the check already finished. Checks still running after 10 minutes are failed by the sweep |
 | `POST /internal/v1/jobs/{runId}/source` | `{commitSha, commitMessage}` | `204` |
 | `PUT /internal/v1/jobs/{runId}/stages/{stage}` | `{status: completed\|skipped\|error, tool, durationSeconds, log, findings: [Finding]}` | `{status: passed\|warning\|failed\|skipped}`; `409` if the run is not running or the stage was already reported; `400` if the tool differs from the queued one |
 | `POST /internal/v1/jobs/{runId}/complete` | — | `204` |

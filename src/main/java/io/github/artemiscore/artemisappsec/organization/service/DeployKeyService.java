@@ -7,7 +7,5 @@ public interface DeployKeyService {
 
 	List<DeployKeyView> findAll(UUID organizationId);
 
-	DeployKeyView add(UUID organizationId, AddDeployKeyCommand command);
-
 	void revoke(UUID organizationId, UUID id);
 }

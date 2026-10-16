@@ -12,7 +12,7 @@ from pathlib import Path
 from .api import ApiClient, ApiError
 from .clone import CloneRefused, clone
 from .config import Config
-from .job import process, wipe, wipe_workspace
+from .job import process, process_access_check, wipe, wipe_workspace
 from .scan import run_stage
 
 log = logging.getLogger("artemis.runner")
@@ -69,6 +69,16 @@ def run_loop() -> int:
             job = None
         if job is None:
             _sleep(config.poll_interval + random.uniform(0, 1), lambda: stopping)
+            continue
+        if job.get("type") == "access-check":
+            try:
+                process_access_check(job, api, config)
+            except Exception:  # noqa: BLE001
+                log.exception("access check %s failed unexpectedly", job.get("checkId"))
+                try:
+                    api.access_check(job["checkId"], False, "The scanner runner hit an internal error.", None)
+                except ApiError:
+                    pass
             continue
         log.info("run %s claimed", job.get("number"))
         try:

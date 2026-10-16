@@ -9,11 +9,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.github.artemiscore.artemisappsec.organization.domain.DeployKey;
-import io.github.artemiscore.artemisappsec.organization.domain.SshPublicKey;
 import io.github.artemiscore.artemisappsec.organization.persistence.DeployKeyRepository;
 import io.github.artemiscore.artemisappsec.project.service.ProjectService;
 import io.github.artemiscore.artemisappsec.project.service.ProjectSummary;
-import io.github.artemiscore.artemisappsec.shared.error.BusinessRuleException;
 import io.github.artemiscore.artemisappsec.shared.error.ResourceNotFoundException;
 
 @Service
@@ -36,23 +34,14 @@ class DeployKeyServiceImpl implements DeployKeyService {
 
 	@Override
 	@Transactional
-	public DeployKeyView add(UUID organizationId, AddDeployKeyCommand command) {
-		SshPublicKey key = SshPublicKey.parse(command.publicKey());
-		ProjectSummary project = projects.getByName(organizationId, command.repository()).project();
-		if (keys.existsByProjectIdAndFingerprint(project.id(), key.fingerprint())) {
-			throw new BusinessRuleException("This key is already registered for '%s'".formatted(project.name()));
-		}
-		DeployKey saved = keys.save(new DeployKey(command.name().strip(), project.id(), key));
-		return toView(saved, project.name());
-	}
-
-	@Override
-	@Transactional
 	public void revoke(UUID organizationId, UUID id) {
 		DeployKey key = keys.findById(id)
 			.filter(k -> projectNames(organizationId).containsKey(k.getProjectId()))
 			.orElseThrow(() -> new ResourceNotFoundException("Deploy key", id));
 		keys.delete(key);
+		if (key.isManaged()) {
+			projects.resetAccess(key.getProjectId());
+		}
 	}
 
 	private Map<UUID, String> projectNames(UUID organizationId) {
@@ -61,6 +50,6 @@ class DeployKeyServiceImpl implements DeployKeyService {
 
 	private static DeployKeyView toView(DeployKey k, String repository) {
 		return new DeployKeyView(k.getId(), k.getName(), k.getKeyType(), k.getFingerprint(), repository, k.getCreatedAt(),
-				k.getLastUsedAt());
+				k.getLastUsedAt(), k.isManaged(), k.isManaged() ? k.getPublicKey() : null);
 	}
 }
