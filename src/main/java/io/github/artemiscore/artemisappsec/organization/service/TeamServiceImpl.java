@@ -41,6 +41,8 @@ class TeamServiceImpl implements TeamService {
 	@Transactional
 	public MemberView changeRole(Tenant tenant, UUID memberId, Role role) {
 		Member member = loadOther(tenant, memberId, "change your own role");
+		requireOwnerForAdmins(tenant, member.getRole());
+		requireOwnerForAdmins(tenant, role);
 		member.changeRole(role);
 		return toView(member);
 	}
@@ -52,6 +54,7 @@ class TeamServiceImpl implements TeamService {
 		if (member.getRole() == Role.OWNER) {
 			throw new BusinessRuleException("The owner cannot be removed");
 		}
+		requireOwnerForAdmins(tenant, member.getRole());
 		members.delete(member);
 	}
 
@@ -81,6 +84,7 @@ class TeamServiceImpl implements TeamService {
 	@Override
 	@Transactional
 	public InvitationView invite(Tenant tenant, InviteCommand command) {
+		requireOwnerForAdmins(tenant, command.role());
 		String email = command.email().strip().toLowerCase(Locale.ROOT);
 		if (members.findByOrganizationIdAndEmail(tenant.organizationId(), email).filter(Member::isActive).isPresent()) {
 			throw new ApiProblemException(HttpStatus.CONFLICT, "already-member", "'%s' is already a member".formatted(email));
@@ -123,6 +127,13 @@ class TeamServiceImpl implements TeamService {
 	private String inviterName(Tenant tenant) {
 		return tenant.memberId() == null ? tenant.actor()
 				: members.findById(tenant.memberId()).map(Member::getName).orElse(tenant.actor());
+	}
+
+	/** Only the owner manages admins: admins cannot promote, demote, invite or remove admins. */
+	private static void requireOwnerForAdmins(Tenant tenant, Role role) {
+		if (role == Role.ADMIN && tenant.role() != Role.OWNER) {
+			throw new ApiProblemException(HttpStatus.FORBIDDEN, "owner-only", "Only the owner can manage admins");
+		}
 	}
 
 	private Member loadOther(Tenant tenant, UUID memberId, String forbiddenOnSelf) {
