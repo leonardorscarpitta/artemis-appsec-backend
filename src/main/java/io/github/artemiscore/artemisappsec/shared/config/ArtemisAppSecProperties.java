@@ -5,7 +5,7 @@ import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "artemisappsec")
-public record ArtemisAppSecProperties(Security security, Cors cors) {
+public record ArtemisAppSecProperties(Security security, Cors cors, Billing billing) {
 
 	public record Security(boolean authEnabled, Oidc oidc) {
 	}
@@ -16,6 +16,10 @@ public record ArtemisAppSecProperties(Security security, Cors cors) {
 	 * @param audience required {@code aud} claim
 	 */
 	public record Oidc(String issuerUri, String jwkSetUri, String audience) {
+	}
+
+	/** @param enabled whether plans can be changed; while false the API only reports plans and the current one */
+	public record Billing(boolean enabled) {
 	}
 
 	public record Cors(List<String> allowedOrigins) {

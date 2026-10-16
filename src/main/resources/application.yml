@@ -46,3 +46,5 @@ artemisappsec:
       audience: ${OIDC_AUDIENCE:artemisappsec-api}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:}
+  billing:
+    enabled: ${BILLING_ENABLED:false}
