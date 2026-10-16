@@ -1,0 +1,9 @@
+# TLS terminator for Keycloak (public sign-in URL). Uses Caddy's local CA.
+{
+	auto_https disable_redirects
+	local_certs
+}
+
+auth.artemisappsec.localhost:9443 {
+	reverse_proxy keycloak:8080
+}

@@ -46,32 +46,71 @@ services:
       db:
         condition: service_healthy
 
-  authelia:
-    image: authelia/authelia:4.39
-    restart: unless-stopped
+  keycloak-db-init:
+    image: postgres:18-alpine
+    entrypoint: ["/bin/sh", "/init-db.sh"]
     environment:
-      X_AUTHELIA_CONFIG: /config/configuration.yml
-      X_AUTHELIA_CONFIG_FILTERS: template
-      ARTEMISAPPSEC_AUTH_COOKIE_DOMAIN: ${AUTH_COOKIE_DOMAIN:-artemisappsec.localhost}
-      ARTEMISAPPSEC_AUTH_PUBLIC_URL: ${AUTH_PUBLIC_URL:-https://auth.artemisappsec.localhost:9443}
-      ARTEMISAPPSEC_WEB_ORIGIN: ${ARTEMISAPPSEC_WEB_ORIGIN:-http://localhost:4200}
-      ARTEMISAPPSEC_WEB_REDIRECT_URI: ${ARTEMISAPPSEC_WEB_REDIRECT_URI:-http://localhost:4200/auth/callback}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
     volumes:
-      - ./authelia/configuration.yml:/config/configuration.yml:ro
-      - ./authelia/secrets:/secrets:ro
-      - authelia_data:/data
-    mem_limit: 384m  # argon2 password checks need ~64 MB each
+      - ./keycloak/init-db.sh:/init-db.sh:ro
+    mem_limit: 64m
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Identity provider (OpenID Connect): sign-in, self-registration with e-mail verification, account page.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    restart: unless-stopped
+    command:
+      - start
+      - --import-realm
+      - --http-enabled=true
+      - --hostname=${AUTH_PUBLIC_URL:-https://auth.artemisappsec.localhost:9443}
+      - --hostname-backchannel-dynamic=true
+      - --proxy-headers=xforwarded
+      - --health-enabled=true
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      JAVA_OPTS_KC_HEAP: -XX:MaxRAMPercentage=60
+      # Placeholders used by the realm import
+      ARTEMISAPPSEC_WEB_ORIGIN: ${ARTEMISAPPSEC_WEB_ORIGIN:-http://localhost:4200}
+      KC_SMTP_HOST: ${KC_SMTP_HOST:-mailpit}
+      KC_SMTP_PORT: ${KC_SMTP_PORT:-1025}
+      KC_SMTP_FROM: ${KC_SMTP_FROM:-no-reply@artemisappsec.localhost}
+    volumes:
+      - ./keycloak/realm-artemisappsec.json:/opt/keycloak/data/import/realm-artemisappsec.json:ro
+    mem_limit: 768m
+    depends_on:
+      keycloak-db-init:
+        condition: service_completed_successfully
 
   auth-proxy:
     image: caddy:2-alpine
+    restart: unless-stopped
     ports:
       - "${AUTH_PORT:-9443}:9443"
     volumes:
-      - ./authelia/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./keycloak/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
     mem_limit: 64m
     depends_on:
-      - authelia
+      - keycloak
+
+  # Development mail catcher: verification and password-reset e-mails appear at http://localhost:8025.
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+    mem_limit: 64m
 
   # Runs the open-source scanners (README "Scanner runner"). Sandboxed: read-only root filesystem, no Linux
   # capabilities, in-memory workspace wiped after each run, and no route to the database (scanner network only).
@@ -107,6 +146,5 @@ networks:
 
 volumes:
   db_data:
-  authelia_data:
   caddy_data:
   scanner_cache:
