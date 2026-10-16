@@ -16,7 +16,9 @@
 
 ---
 
-Backend of Artemis, a SAST platform. The frontend lives in a separate repository.
+Backend of Artemis, a SAST platform. The frontend lives in the [artemis-frontend](https://github.com/Artemis-Core/artemis-appsec-frontend) repository.
+
+**Naming:** users see the product as **Artemis**; technical identifiers use **artemisappsec** — Java package `io.github.artemiscore.artemisappsec`, Maven artifact, `spring.application.name`, configuration prefix `artemisappsec.*`, database name/user, OIDC client `artemisappsec-web`, audience `artemisappsec-api` and the local auth host `auth.artemisappsec.localhost`.
 
 ## Running locally
 
