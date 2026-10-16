@@ -68,7 +68,7 @@ All environment-specific values come from environment variables (secrets in prod
 | `OIDC_JWK_SET_URI` | Optional URL of the signing keys (internal URL in Docker) |
 | `OIDC_AUDIENCE` | Required `aud` claim (default `artemis-api`) |
 | `AUTH_ENABLED` | `dev` profile only: `false` disables authentication |
-| `AUTH_COOKIE_DOMAIN`, `AUTH_PUBLIC_URL`, `ARTEMIS_WEB_REDIRECT_URI` | Authelia session domain, public URL and the frontend callback URL |
+| `AUTH_COOKIE_DOMAIN`, `AUTH_PUBLIC_URL`, `ARTEMIS_WEB_ORIGIN`, `ARTEMIS_WEB_REDIRECT_URI` | Authelia session domain, public URL, the frontend origin (CORS) and callback URL |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated origins allowed to call `/api/**` |
 
 ## Architecture
