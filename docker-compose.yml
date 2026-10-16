@@ -1,4 +1,4 @@
-# Local development stack: PostgreSQL + API in debug mode with live reload.
+# Local development stack: PostgreSQL, Authelia (OIDC behind Caddy TLS) and the API in debug mode.
 services:
   db:
     image: postgres:18-alpine
@@ -37,5 +37,31 @@ services:
       db:
         condition: service_healthy
 
+  authelia:
+    image: authelia/authelia:4.39
+    environment:
+      X_AUTHELIA_CONFIG: /config/configuration.yml
+      X_AUTHELIA_CONFIG_FILTERS: template
+      ARTEMIS_AUTH_COOKIE_DOMAIN: ${AUTH_COOKIE_DOMAIN:-artemis.localhost}
+      ARTEMIS_AUTH_PUBLIC_URL: ${AUTH_PUBLIC_URL:-https://auth.artemis.localhost:9443}
+      ARTEMIS_WEB_ORIGIN: ${ARTEMIS_WEB_ORIGIN:-http://localhost:4200}
+      ARTEMIS_WEB_REDIRECT_URI: ${ARTEMIS_WEB_REDIRECT_URI:-http://localhost:4200/auth/callback}
+    volumes:
+      - ./authelia/configuration.yml:/config/configuration.yml:ro
+      - ./authelia/secrets:/secrets:ro
+      - authelia_data:/data
+
+  auth-proxy:
+    image: caddy:2-alpine
+    ports:
+      - "${AUTH_PORT:-9443}:9443"
+    volumes:
+      - ./authelia/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on:
+      - authelia
+
 volumes:
   db_data:
+  authelia_data:
+  caddy_data:

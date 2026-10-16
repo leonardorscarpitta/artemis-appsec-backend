@@ -1,0 +1,74 @@
+# Authelia: OpenID Connect provider for Artemis (local development setup).
+# Secrets are read from files (see generate-secrets.sh); nothing sensitive lives in this file.
+theme: auto
+
+server:
+  address: 'tcp://:9091'
+
+log:
+  level: info
+
+identity_validation:
+  reset_password:
+    jwt_secret: {{ secret "/secrets/reset_password_jwt_secret" | msquote }}
+
+authentication_backend:
+  password_reset:
+    disable: true
+  file:
+    path: /secrets/users.yml
+    password:
+      algorithm: argon2
+
+access_control:
+  default_policy: one_factor
+
+session:
+  secret: {{ secret "/secrets/session_secret" | msquote }}
+  cookies:
+    - domain: {{ env "ARTEMIS_AUTH_COOKIE_DOMAIN" | msquote }}
+      authelia_url: {{ env "ARTEMIS_AUTH_PUBLIC_URL" | msquote }}
+
+storage:
+  encryption_key: {{ secret "/secrets/storage_encryption_key" | msquote }}
+  local:
+    path: /data/db.sqlite3
+
+notifier:
+  filesystem:
+    filename: /data/notification.txt
+
+identity_providers:
+  oidc:
+    hmac_secret: {{ secret "/secrets/oidc_hmac_secret" | msquote }}
+    jwks:
+      - key_id: 'artemis'
+        algorithm: RS256
+        use: sig
+        key: {{ secret "/secrets/oidc_jwks.pem" | mindent 10 "|" | msquote }}
+    claims_policies:
+      artemis:
+        access_token: [preferred_username, name, email, groups]
+        id_token: [preferred_username, name, email, groups]
+    cors:
+      endpoints: [authorization, token, revocation, introspection, userinfo]
+      allowed_origins:
+        - {{ env "ARTEMIS_WEB_ORIGIN" | msquote }}
+    clients:
+      - client_id: 'artemis-web'
+        client_name: 'Artemis'
+        public: true
+        authorization_policy: one_factor
+        consent_mode: implicit
+        require_pkce: true
+        pkce_challenge_method: S256
+        redirect_uris:
+          - {{ env "ARTEMIS_WEB_REDIRECT_URI" | msquote }}
+        scopes: [openid, profile, email, groups]
+        grant_types: [authorization_code]
+        response_types: [code]
+        audience: [artemis-api]
+        requested_audience_mode: implicit
+        claims_policy: artemis
+        access_token_signed_response_alg: RS256
+        token_endpoint_auth_method: none
