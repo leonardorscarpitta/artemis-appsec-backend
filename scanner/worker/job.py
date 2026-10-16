@@ -46,7 +46,9 @@ def process(job: dict, api: ApiClient, config: Config) -> None:
             if failed_stage:
                 api.stage(run_id, stage["id"], not_run(stage, failed_stage))
                 continue
-            if targets:
+            if stage["id"] == "image":
+                result = run_stage(stage["id"], stage.get("tool", ""), src, work, timeout, image=repo.get("image"))
+            elif targets:
                 result = merge([(folder, run_stage(stage["id"], stage.get("tool", ""), target, work, timeout))
                                 for folder, target in targets])
             else:

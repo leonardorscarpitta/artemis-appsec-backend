@@ -11,10 +11,11 @@ public enum Stage {
 	SCA(Phase.SOURCE, List.of("Trivy", "Grype"), true, FailThreshold.CRITICAL, 2, true),
 	LICENSE(Phase.SOURCE, List.of("Trivy"), false, FailThreshold.NEVER, 1, true),
 	DOCKERFILE(Phase.BUILD, List.of("Hadolint", "Trivy"), true, FailThreshold.HIGH, 1, true),
-	// Scanning built images and running DAST need isolated build/runtime environments that are not available yet.
-	IMAGE(Phase.BUILD, List.of("Trivy"), false, FailThreshold.CRITICAL, 3, false),
+	// Scans a published image (registry reference in the repository settings); Artemis never builds images.
+	IMAGE(Phase.BUILD, List.of("Trivy"), false, FailThreshold.CRITICAL, 3, true),
 	SBOM(Phase.BUILD, List.of("Syft"), true, null, 1, true),
 	IAC(Phase.DEPLOY, List.of("Trivy"), false, FailThreshold.HIGH, 2, true),
+	// Needs an authorized, verified running target in its own sandbox; not available yet.
 	DAST(Phase.DEPLOY, List.of("OWASP ZAP"), false, FailThreshold.HIGH, 12, false);
 
 	private final Phase phase;

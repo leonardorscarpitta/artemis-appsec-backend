@@ -1,7 +1,9 @@
 """Trivy: dependency vulnerabilities, licenses and misconfigurations (IaC and Dockerfiles)."""
+import ipaddress
+import socket
 from pathlib import Path
 
-from .base import ToolResult, finding, location, read_json, run, severity, summary
+from .base import ToolError, ToolResult, finding, location, read_json, run, severity, summary
 
 ECOSYSTEMS = {
     "npm": "npm", "yarn": "npm", "pnpm": "npm", "node-pkg": "npm", "bun": "npm",
@@ -15,6 +17,8 @@ COMMON = ["--format", "json", "--quiet", "--skip-version-check", "--timeout", "1
 # --offline-scan: never query package registries (e.g. Maven Central for parent POMs) — they rate-limit (429)
 # and would learn the repository's dependencies. The vulnerability database is still updated.
 FS_ONLY = ["--parallel", "1", "--offline-scan"]
+# Compressed size; layers are unpacked in the 1 GB in-memory workspace.
+MAX_IMAGE_SIZE = "700MB"
 
 
 def _cvss(vuln: dict) -> tuple[float | None, str | None]:
@@ -29,6 +33,36 @@ def _cvss(vuln: dict) -> tuple[float | None, str | None]:
 def vulnerabilities(src: Path, out: Path, timeout: int) -> ToolResult:
     report = out / "trivy-vuln.json"
     run(["trivy", "fs", "--scanners", "vuln", *COMMON, *FS_ONLY, "--output", str(report), str(src)], timeout, out)
+    findings = _vulnerability_findings(report)
+    return ToolResult(findings, summary("Trivy", findings))
+
+
+def image(reference: str, out: Path, timeout: int) -> ToolResult:
+    """Scans a published image pulled straight from its registry: nothing is built or run, no container socket."""
+    require_public_registry(reference)
+    report = out / "trivy-image.json"
+    # Layers are unpacked under `out` (the in-memory workspace), never in the read-only image or /tmp.
+    run(["trivy", "image", "--image-src", "remote", "--scanners", "vuln", "--max-image-size", MAX_IMAGE_SIZE,
+         *COMMON, *FS_ONLY, "--output", str(report), reference], timeout, out, env={"TMPDIR": str(out)})
+    findings = _vulnerability_findings(report)
+    return ToolResult(findings, summary("Trivy", findings))
+
+
+def require_public_registry(reference: str) -> None:
+    first, _, rest = reference.partition("/")
+    registry = first if rest and ("." in first or ":" in first) else "registry-1.docker.io"
+    host, _, port = registry.partition(":")
+    if host == "localhost" or (port and port != "443"):
+        raise ToolError("Only images from public registries on the default HTTPS port can be scanned")
+    try:
+        infos = socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
+    except socket.gaierror:
+        raise ToolError(f"Registry {host} could not be resolved") from None
+    if any(not ipaddress.ip_address(info[4][0]).is_global for info in infos):
+        raise ToolError(f"Registry {host} is not a public address")
+
+
+def _vulnerability_findings(report: Path) -> list[dict]:
     findings = []
     for result in (read_json(report, {}) or {}).get("Results") or []:
         ecosystem = ECOSYSTEMS.get(result.get("Type", ""), result.get("Type") or "other")
@@ -45,7 +79,7 @@ def vulnerabilities(src: Path, out: Path, timeout: int) -> ToolResult:
                          "fixedVersion": vuln.get("FixedVersion") or None, "ecosystem": ecosystem},
                 location=location(result.get("Target"), None),
             ))
-    return ToolResult(findings, summary("Trivy", findings))
+    return findings
 
 
 def licenses(src: Path, out: Path, timeout: int) -> ToolResult:
