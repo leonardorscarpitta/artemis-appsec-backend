@@ -1,6 +1,11 @@
 package io.github.artemiscore.artemisappsec.billing.service;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.util.Arrays;
+import java.util.List;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,10 +22,13 @@ import io.github.artemiscore.artemisappsec.shared.error.BusinessRuleException;
 class BillingServiceImpl implements BillingService {
 
 	private final SubscriptionRepository subscriptions;
+	private final ScanUsage usage;
 	private final boolean enabled;
+	private final Clock clock = Clock.systemUTC();
 
-	BillingServiceImpl(SubscriptionRepository subscriptions, ArtemisAppSecProperties properties) {
+	BillingServiceImpl(SubscriptionRepository subscriptions, ScanUsage usage, ArtemisAppSecProperties properties) {
 		this.subscriptions = subscriptions;
+		this.usage = usage;
 		this.enabled = properties.billing() != null && properties.billing().enabled();
 	}
 
@@ -48,6 +56,19 @@ class BillingServiceImpl implements BillingService {
 	}
 
 	@Override
+	public List<PlanView> plans() {
+		return Arrays.stream(Plan.values()).map(PlanView::of).toList();
+	}
+
+	@Override
+	public void assertCanScan() {
+		int limit = current().getPlan().monthlyScanLimit();
+		if (usage.scansSince(periodStart()) >= limit) {
+			throw new BusinessRuleException("Monthly scan limit reached (%d scans on the current plan)".formatted(limit));
+		}
+	}
+
+	@Override
 	public boolean isEntitled(Feature feature) {
 		return current().getPlan().features().contains(feature);
 	}
@@ -56,9 +77,14 @@ class BillingServiceImpl implements BillingService {
 		return subscriptions.findById(Subscription.SINGLETON_ID).orElseThrow();
 	}
 
+	private Instant periodStart() {
+		return ZonedDateTime.now(clock.withZone(ZoneOffset.UTC)).withDayOfMonth(1).toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant();
+	}
+
 	private BillingOverview toOverview(Subscription subscription) {
-		return new BillingOverview(enabled, subscription.getPlan(), subscription.getStartedAt(),
-				Arrays.stream(Plan.values()).map(PlanView::of).toList(),
-				subscription.getPlan().features().stream().sorted().toList());
+		Instant start = periodStart();
+		UsageView usageView = new UsageView(usage.scansSince(start), subscription.getPlan().monthlyScanLimit(), start);
+		return new BillingOverview(enabled, subscription.getPlan(), subscription.getStartedAt(), plans(),
+				subscription.getPlan().features().stream().sorted().toList(), usageView);
 	}
 }

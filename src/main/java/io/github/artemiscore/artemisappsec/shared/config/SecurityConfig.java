@@ -27,7 +27,8 @@ public class SecurityConfig {
 
 	private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
 
-	private static final String[] PUBLIC_PATHS = { "/actuator/health/**", "/actuator/info", "/api/docs/**" };
+	private static final String[] PUBLIC_PATHS = { "/actuator/health/**", "/actuator/info", "/api/docs/**",
+			"/api/v1/billing/plans" };
 
 	@Bean
 	SecurityFilterChain securityFilterChain(HttpSecurity http, ArtemisAppSecProperties properties) throws Exception {

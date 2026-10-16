@@ -18,6 +18,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.github.artemiscore.artemisappsec.billing.service.BillingService;
 import io.github.artemiscore.artemisappsec.pipelinerun.domain.PipelineRun;
 import io.github.artemiscore.artemisappsec.pipelinerun.domain.PipelineRun.StageSelection;
 import io.github.artemiscore.artemisappsec.pipelinerun.domain.RunStatus;
@@ -36,11 +37,13 @@ class PipelineRunServiceImpl implements PipelineRunService {
 
 	private final PipelineRunRepository runs;
 	private final ProjectService projects;
+	private final BillingService billing;
 	private final Clock clock;
 
-	PipelineRunServiceImpl(PipelineRunRepository runs, ProjectService projects) {
+	PipelineRunServiceImpl(PipelineRunRepository runs, ProjectService projects, BillingService billing) {
 		this.runs = runs;
 		this.projects = projects;
+		this.billing = billing;
 		this.clock = Clock.systemUTC();
 	}
 
@@ -86,6 +89,7 @@ class PipelineRunServiceImpl implements PipelineRunService {
 	@Override
 	@Transactional
 	public RunDetails rerun(long number, String actor) {
+		billing.assertCanScan();
 		PipelineRun source = load(number);
 		ProjectSummary project = projects.findById(source.getProjectId())
 			.orElseThrow(() -> new ResourceNotFoundException("Repository", source.getProjectId()));
