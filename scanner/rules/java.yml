@@ -1,0 +1,73 @@
+rules:
+  - id: java-sql-string-concatenation
+    languages: [java]
+    severity: ERROR
+    message: SQL built by string concatenation. Use PreparedStatement parameters or named parameters in JPA/JDBC templates.
+    metadata: { title: SQL injection, cwe: "CWE-89: SQL Injection", artemis-severity: high }
+    pattern-either:
+      - pattern: (java.sql.Statement $S).executeQuery("$SQL" + $X)
+      - pattern: (java.sql.Statement $S).execute("$SQL" + $X)
+      - pattern: (java.sql.Statement $S).executeUpdate("$SQL" + $X)
+      - pattern: $EM.createQuery("$SQL" + $X, ...)
+      - pattern: $EM.createNativeQuery("$SQL" + $X, ...)
+      - pattern: $T.queryForObject("$SQL" + $X, ...)
+      - pattern: $T.query("$SQL" + $X, ...)
+    metavariable-regex:
+      metavariable: $SQL
+      regex: (?i)\b(select|insert|update|delete|where|from)\b
+
+  - id: java-runtime-exec
+    languages: [java]
+    severity: ERROR
+    message: Command execution with a concatenated string. Use ProcessBuilder with a fixed command and separate arguments.
+    metadata: { title: OS command injection, cwe: "CWE-78: OS Command Injection", artemis-severity: critical }
+    pattern-either:
+      - pattern: Runtime.getRuntime().exec($A + $B)
+      - pattern: new ProcessBuilder("sh", "-c", $CMD)
+      - pattern: new ProcessBuilder("bash", "-c", $CMD)
+
+  - id: java-object-input-stream
+    languages: [java]
+    severity: ERROR
+    message: Java native deserialization of untrusted data can lead to remote code execution. Prefer JSON or use an ObjectInputFilter.
+    metadata: { title: Insecure deserialization, cwe: "CWE-502: Deserialization of Untrusted Data", artemis-severity: high }
+    pattern: new java.io.ObjectInputStream(...).readObject()
+
+  - id: java-weak-hash
+    languages: [java]
+    severity: WARNING
+    message: MD5/SHA-1 are broken for security purposes. Use SHA-256+ for integrity and bcrypt/argon2 for passwords.
+    metadata: { title: Weak hash algorithm, cwe: "CWE-328: Use of Weak Hash" }
+    pattern-either:
+      - pattern: java.security.MessageDigest.getInstance("MD5")
+      - pattern: java.security.MessageDigest.getInstance("SHA-1")
+      - pattern: java.security.MessageDigest.getInstance("SHA1")
+
+  - id: java-weak-cipher
+    languages: [java]
+    severity: ERROR
+    message: DES/3DES/RC4 or ECB mode are insecure. Use AES-GCM.
+    metadata: { title: Weak cipher, cwe: "CWE-327: Broken Cryptographic Algorithm", artemis-severity: high }
+    patterns:
+      - pattern: javax.crypto.Cipher.getInstance("$ALG")
+      - metavariable-regex:
+          metavariable: $ALG
+          regex: (?i)^(des|desede|rc4|arcfour|blowfish)(/.*)?$|.*/ecb/.*|^aes$
+
+  - id: java-insecure-random
+    languages: [java]
+    severity: WARNING
+    message: java.util.Random is predictable. Use java.security.SecureRandom for tokens, keys and passwords.
+    metadata: { title: Insecure randomness, cwe: "CWE-330: Insufficiently Random Values" }
+    pattern: new java.util.Random(...)
+
+  - id: java-trust-all-certificates
+    languages: [java]
+    severity: ERROR
+    message: A TrustManager/HostnameVerifier that accepts everything disables TLS verification.
+    metadata: { title: TLS verification disabled, cwe: "CWE-295: Improper Certificate Validation", artemis-severity: high }
+    pattern-either:
+      - pattern: |
+          public void checkServerTrusted(...) { }
+      - pattern: |
+          public boolean verify(String $H, javax.net.ssl.SSLSession $S) { return true; }

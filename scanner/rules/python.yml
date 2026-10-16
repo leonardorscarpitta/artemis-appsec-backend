@@ -1,0 +1,64 @@
+rules:
+  - id: python-subprocess-shell-true
+    languages: [python]
+    severity: ERROR
+    message: subprocess with shell=True and a non-literal command allows command injection. Pass an argument list without shell=True.
+    metadata: { title: OS command injection, cwe: "CWE-78: OS Command Injection", artemis-severity: critical }
+    patterns:
+      - pattern-either:
+          - pattern: subprocess.$F($CMD, ..., shell=True, ...)
+          - pattern: os.system($CMD)
+          - pattern: os.popen($CMD)
+      - pattern-not: subprocess.$F("...", ..., shell=True, ...)
+      - pattern-not: os.system("...")
+      - pattern-not: os.popen("...")
+
+  - id: python-eval-exec
+    languages: [python]
+    severity: ERROR
+    message: eval/exec on dynamic input allows arbitrary code execution. Use ast.literal_eval or explicit parsing.
+    metadata: { title: Dynamic code execution, cwe: "CWE-95: Eval Injection", artemis-severity: high }
+    patterns:
+      - pattern-either:
+          - pattern: eval($X)
+          - pattern: exec($X)
+      - pattern-not: eval("...")
+      - pattern-not: exec("...")
+
+  - id: python-sql-string-formatting
+    languages: [python]
+    severity: ERROR
+    message: SQL built with string formatting. Use parameterized queries (cursor.execute(sql, params)).
+    metadata: { title: SQL injection, cwe: "CWE-89: SQL Injection", artemis-severity: high }
+    pattern-either:
+      - pattern: $C.execute("..." % $X, ...)
+      - pattern: $C.execute("...".format(...), ...)
+      - pattern: $C.execute(f"...", ...)
+      - pattern: $C.execute("..." + $X, ...)
+
+  - id: python-unsafe-deserialization
+    languages: [python]
+    severity: ERROR
+    message: pickle/yaml.load on untrusted data can execute code. Use json or yaml.safe_load.
+    metadata: { title: Insecure deserialization, cwe: "CWE-502: Deserialization of Untrusted Data", artemis-severity: high }
+    pattern-either:
+      - pattern: pickle.loads(...)
+      - pattern: pickle.load(...)
+      - pattern: yaml.load($X)
+      - pattern: yaml.load($X, Loader=yaml.Loader)
+
+  - id: python-requests-verify-false
+    languages: [python]
+    severity: ERROR
+    message: TLS certificate verification disabled (verify=False).
+    metadata: { title: TLS verification disabled, cwe: "CWE-295: Improper Certificate Validation", artemis-severity: high }
+    pattern: requests.$M(..., verify=False, ...)
+
+  - id: python-weak-hash-password
+    languages: [python]
+    severity: WARNING
+    message: MD5/SHA-1 are not suitable for passwords or security tokens. Use hashlib.scrypt, bcrypt or argon2.
+    metadata: { title: Weak hash algorithm, cwe: "CWE-328: Use of Weak Hash" }
+    pattern-either:
+      - pattern: hashlib.md5(...)
+      - pattern: hashlib.sha1(...)
