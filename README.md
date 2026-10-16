@@ -74,6 +74,14 @@ Rules:
 | Module | Responsibility | Base path |
 | --- | --- | --- |
 | `project` | Monitored repositories, scan settings, pipeline configuration | `/api/v1/repositories`, `/api/v1/pipeline/stages` |
+| `organization` | Integrations, SSH deploy keys, team (members, invitations, roles), organization settings, API tokens | `/api/v1/integrations`, `/api/v1/deploy-keys`, `/api/v1/members`, `/api/v1/invitations`, `/api/v1/roles`, `/api/v1/organization`, `/api/v1/api-tokens` |
+
+Security notes for `organization`:
+
+- Deploy keys accept **public keys only** (private keys are rejected); the type and key data are validated (ed25519, ECDSA, RSA ≥ 2048 bits) and the OpenSSH `SHA256:` fingerprint is computed server-side.
+- API tokens (`art_…`) are generated with `SecureRandom` and returned **once**; only their SHA-256 hash and last four characters are stored.
+- The OIDC client secret is never stored or returned — it belongs in the deployment's secret store; the API only reports whether it is configured.
+- The organization is a single row (`organization_settings`): one organization per deployment.
 
 JSON enum values match the frontend (`"Java + Spring"`, `"24h"`, `"sast"`, `"critical"`...).
 
