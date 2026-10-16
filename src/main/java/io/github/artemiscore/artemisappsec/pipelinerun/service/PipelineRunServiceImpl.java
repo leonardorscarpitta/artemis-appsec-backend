@@ -107,19 +107,23 @@ class PipelineRunServiceImpl implements PipelineRunService {
 		ProjectSummary project = projects.findById(source.getProjectId())
 			.orElseThrow(() -> new ResourceNotFoundException("Repository", source.getProjectId()));
 		List<StageSelection> stages = enabledStages(organizationId, project.name());
+		// Folders removed from the repository since then are dropped; none left means all of them.
+		List<String> current = project.folders().stream().map(f -> f.path()).toList();
+		List<String> folders = selectFolders(project, source.getFolders().stream().filter(current::contains).toList());
 		PipelineRun run = PipelineRun.queued(runs.nextNumber(), source.getProjectId(), source.getBranch(),
-				source.getCommitSha(), source.getCommitMessage(), actor, stages);
+				source.getCommitSha(), source.getCommitMessage(), actor, stages, folders);
 		return toDetails(runs.save(run), Map.of(project.id(), project.name()));
 	}
 
 	@Override
 	@Transactional
-	public RunDetails queueScan(UUID organizationId, String repository, String actor) {
+	public RunDetails queueScan(UUID organizationId, String repository, String actor, List<String> folders) {
 		ProjectDetails project = projects.getByName(organizationId, repository);
+		List<String> selected = selectFolders(project.project(), folders);
 		billing.assertCanScan(organizationId);
 		List<StageSelection> stages = enabledStages(organizationId, repository);
 		PipelineRun run = PipelineRun.queued(runs.nextNumber(), project.project().id(), project.project().branch(),
-				PENDING_COMMIT, PENDING_MESSAGE, actor, stages);
+				PENDING_COMMIT, PENDING_MESSAGE, actor, stages, selected);
 		return toDetails(runs.save(run), Map.of(project.project().id(), repository));
 	}
 
@@ -133,7 +137,8 @@ class PipelineRunServiceImpl implements PipelineRunService {
 		PipelineRun run = loadById(next.get());
 		run.start(Instant.now(clock));
 		List<StageAssignment> pending = pendingStages(run);
-		return Optional.of(new ClaimedRun(run.getId(), run.getNumber(), run.getProjectId(), run.getBranch(), pending));
+		return Optional.of(new ClaimedRun(run.getId(), run.getNumber(), run.getProjectId(), run.getBranch(), pending,
+				run.getFolders()));
 	}
 
 	@Override
@@ -217,6 +222,22 @@ class PipelineRunServiceImpl implements PipelineRunService {
 			.orElseThrow(() -> new ResourceNotFoundException("Pipeline run", number));
 	}
 
+	/**
+	 * The monorepo folders a run scans, in the repository's order: the requested ones (each must be one of the
+	 * repository's folders, else 400) or, when none are requested, all of them. Empty for non-monorepos.
+	 */
+	private static List<String> selectFolders(ProjectSummary project, List<String> requested) {
+		List<String> all = project.folders().stream().map(f -> f.path()).toList();
+		if (requested == null || requested.isEmpty()) {
+			return all;
+		}
+		List<String> unknown = requested.stream().filter(f -> !all.contains(f)).toList();
+		if (!unknown.isEmpty()) {
+			throw new IllegalArgumentException("Unknown monorepo folder(s): " + String.join(", ", unknown));
+		}
+		return all.stream().filter(requested::contains).toList();
+	}
+
 	private Map<UUID, String> projectNames(UUID organizationId) {
 		return projects.findAll(organizationId).stream().collect(Collectors.toMap(ProjectSummary::id, ProjectSummary::name));
 	}
@@ -224,7 +245,7 @@ class PipelineRunServiceImpl implements PipelineRunService {
 	private static RunView toView(PipelineRun r, Map<UUID, String> names) {
 		return new RunView(r.getNumber(), names.getOrDefault(r.getProjectId(), "unknown"), r.getBranch(), r.getCommitSha(),
 				r.getCommitMessage(), r.getTrigger(), r.getActor(), r.getStatus(), r.getStartedAt(), r.getDurationSeconds(),
-				r.getNewFindings(), r.totalFindings(), r.failedByPolicy());
+				r.getNewFindings(), r.totalFindings(), r.failedByPolicy(), r.getFolders());
 	}
 
 	private static RunDetails toDetails(PipelineRun r, Map<UUID, String> names) {

@@ -22,7 +22,8 @@ public interface PipelineRunService {
 	RunDetails cancel(UUID organizationId, long number);
 
 	/** Queues a manual scan of a repository with its current pipeline configuration (counts against the plan's quota). */
-	RunDetails queueScan(UUID organizationId, String repository, String actor);
+	/** @param folders monorepo folders to scan; null or empty scans all of the repository's folders */
+	RunDetails queueScan(UUID organizationId, String repository, String actor, List<String> folders);
 
 	// --- Scanner runner (internal job API) ---
 
