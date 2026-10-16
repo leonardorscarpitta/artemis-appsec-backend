@@ -1,7 +1,7 @@
 -- Demo data for local development only (loaded by the "dev" profile).
 UPDATE organization_settings
 SET name = 'Acme Corp', slug = 'acme', default_language = 'pt-BR', timezone = 'America/Sao_Paulo',
-    oidc_issuer = 'https://auth.acme.example', oidc_client_id = 'artemis-web', oidc_client_secret_set = TRUE,
+    oidc_issuer = 'https://auth.acme.example', oidc_client_id = 'artemisappsec-web', oidc_client_secret_set = TRUE,
     session_timeout = 'EIGHT_HOURS', enforce_sso = TRUE, findings_retention = 'DAYS_730', logs_retention = 'DAYS_90', reports_retention = 'FOREVER'
 WHERE id = 1;
 
@@ -22,14 +22,14 @@ UPDATE integration SET status = 'CONNECTED', detail = 'SEC'                   WH
 UPDATE integration SET last_sync_at = '2026-10-16T06:00:00Z'                  WHERE id = 'nvd';
 
 INSERT INTO deploy_key (id, name, project_id, key_type, public_key, fingerprint, created_at, last_used_at) VALUES
-    ('00000000-0000-0000-0005-000000000001', 'artemis-storefront', '00000000-0000-0000-0000-000000000001', 'ssh-ed25519',
-     'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0qrGNfpJtzc07wBsLaHKHYF+S/gmSv9C25YIizu72Q artemis-storefront',
+    ('00000000-0000-0000-0005-000000000001', 'artemisappsec-storefront', '00000000-0000-0000-0000-000000000001', 'ssh-ed25519',
+     'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0qrGNfpJtzc07wBsLaHKHYF+S/gmSv9C25YIizu72Q artemisappsec-storefront',
      'SHA256:Wr6kGtBj9U1q+NdsD2RojkrBL49858ZsBY3b1fQxf/Q', '2026-08-02T12:00:00Z', '2026-10-15T22:10:00Z'),
-    ('00000000-0000-0000-0005-000000000002', 'artemis-payments', '00000000-0000-0000-0000-000000000002', 'ssh-ed25519',
-     'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIP1nu/BJ9/BWLfrO7lNZWvC3z9fPEZEzxi/Uuc1IWhbL artemis-payments',
+    ('00000000-0000-0000-0005-000000000002', 'artemisappsec-payments', '00000000-0000-0000-0000-000000000002', 'ssh-ed25519',
+     'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIP1nu/BJ9/BWLfrO7lNZWvC3z9fPEZEzxi/Uuc1IWhbL artemisappsec-payments',
      'SHA256:wCqDbnhRgd/6mpIShFI5PLKUFf2U1Giws4Wx1RQaU+k', '2026-08-14T12:00:00Z', '2026-10-15T21:42:00Z'),
-    ('00000000-0000-0000-0005-000000000003', 'artemis-backoffice', '00000000-0000-0000-0000-000000000003', 'ssh-ed25519',
-     'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKbLu5TRtwih4qTaJTohHnakD16/RKWMsCF9TFYp7dD6 artemis-backoffice',
+    ('00000000-0000-0000-0005-000000000003', 'artemisappsec-backoffice', '00000000-0000-0000-0000-000000000003', 'ssh-ed25519',
+     'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKbLu5TRtwih4qTaJTohHnakD16/RKWMsCF9TFYp7dD6 artemisappsec-backoffice',
      'SHA256:YRYtaVx4gd3TmkvkbJ+hYP1Z1Tqapww8YHFzTtcMdRo', '2026-09-01T12:00:00Z', '2026-10-12T08:00:00Z');
 
 INSERT INTO member (id, name, email, role, active, last_active_at, created_at) VALUES

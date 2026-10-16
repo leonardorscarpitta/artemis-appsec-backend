@@ -4,7 +4,7 @@
 	local_certs
 }
 
-auth.artemis.localhost:9443 {
+auth.artemisappsec.localhost:9443 {
 	reverse_proxy authelia:9091
 }
 
@@ -12,6 +12,6 @@ auth.artemis.localhost:9443 {
 :9080 {
 	reverse_proxy authelia:9091 {
 		header_up X-Forwarded-Proto https
-		header_up X-Forwarded-Host auth.artemis.localhost:9443
+		header_up X-Forwarded-Host auth.artemisappsec.localhost:9443
 	}
 }

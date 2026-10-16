@@ -26,8 +26,8 @@ access_control:
 session:
   secret: {{ secret "/secrets/session_secret" | msquote }}
   cookies:
-    - domain: {{ env "ARTEMIS_AUTH_COOKIE_DOMAIN" | msquote }}
-      authelia_url: {{ env "ARTEMIS_AUTH_PUBLIC_URL" | msquote }}
+    - domain: {{ env "ARTEMISAPPSEC_AUTH_COOKIE_DOMAIN" | msquote }}
+      authelia_url: {{ env "ARTEMISAPPSEC_AUTH_PUBLIC_URL" | msquote }}
 
 storage:
   encryption_key: {{ secret "/secrets/storage_encryption_key" | msquote }}
@@ -42,20 +42,20 @@ identity_providers:
   oidc:
     hmac_secret: {{ secret "/secrets/oidc_hmac_secret" | msquote }}
     jwks:
-      - key_id: 'artemis'
+      - key_id: 'artemisappsec'
         algorithm: RS256
         use: sig
         key: {{ secret "/secrets/oidc_jwks.pem" | mindent 10 "|" | msquote }}
     claims_policies:
-      artemis:
+      artemisappsec:
         access_token: [preferred_username, name, email, groups]
         id_token: [preferred_username, name, email, groups]
     cors:
       endpoints: [authorization, token, revocation, introspection, userinfo]
       allowed_origins:
-        - {{ env "ARTEMIS_WEB_ORIGIN" | msquote }}
+        - {{ env "ARTEMISAPPSEC_WEB_ORIGIN" | msquote }}
     clients:
-      - client_id: 'artemis-web'
+      - client_id: 'artemisappsec-web'
         client_name: 'Artemis'
         public: true
         authorization_policy: one_factor
@@ -63,12 +63,12 @@ identity_providers:
         require_pkce: true
         pkce_challenge_method: S256
         redirect_uris:
-          - {{ env "ARTEMIS_WEB_REDIRECT_URI" | msquote }}
+          - {{ env "ARTEMISAPPSEC_WEB_REDIRECT_URI" | msquote }}
         scopes: [openid, profile, email, groups]
         grant_types: [authorization_code]
         response_types: [code]
-        audience: [artemis-api]
+        audience: [artemisappsec-api]
         requested_audience_mode: implicit
-        claims_policy: artemis
+        claims_policy: artemisappsec
         access_token_signed_response_alg: RS256
         token_endpoint_auth_method: none
