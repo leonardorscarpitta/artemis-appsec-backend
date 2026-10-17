@@ -25,4 +25,6 @@ public interface MemberRepository extends JpaRepository<Member, UUID> {
 	List<Member> findForAccount(String subject, String email);
 
 	long countByUserSubjectAndRole(String userSubject, Role role);
+
+	List<Member> findByUserSubjectAndRole(String userSubject, Role role);
 }

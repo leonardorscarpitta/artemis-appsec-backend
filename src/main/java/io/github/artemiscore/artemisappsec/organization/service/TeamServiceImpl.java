@@ -29,11 +29,14 @@ class TeamServiceImpl implements TeamService {
 	private final MemberRepository members;
 	private final InvitationRepository invitations;
 	private final RolePermissionStore rolePermissions;
+	private final FreeOrganizationLimit freeLimit;
 
-	TeamServiceImpl(MemberRepository members, InvitationRepository invitations, RolePermissionStore rolePermissions) {
+	TeamServiceImpl(MemberRepository members, InvitationRepository invitations, RolePermissionStore rolePermissions,
+			FreeOrganizationLimit freeLimit) {
 		this.members = members;
 		this.invitations = invitations;
 		this.rolePermissions = rolePermissions;
+		this.freeLimit = freeLimit;
 	}
 
 	@Override
@@ -71,6 +74,9 @@ class TeamServiceImpl implements TeamService {
 		Member target = loadOther(tenant, memberId, "transfer the ownership to yourself");
 		if (!target.isActive()) {
 			throw new BusinessRuleException("The new owner must be an active member");
+		}
+		if (freeLimit.isFree(tenant.organizationId())) {
+			freeLimit.requireRoomFor(target.getUserSubject());
 		}
 		Member owner = load(tenant.organizationId(), tenant.memberId());
 		owner.stepDownAsOwner();

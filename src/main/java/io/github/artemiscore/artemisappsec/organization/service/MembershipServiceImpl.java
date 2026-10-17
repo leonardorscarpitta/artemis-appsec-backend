@@ -48,11 +48,13 @@ class MembershipServiceImpl implements MembershipService {
 	private final PlanLookup plans;
 	private final RolePermissionStore rolePermissions;
 	private final ApplicationEventPublisher events;
+	private final FreeOrganizationLimit freeLimit;
 	private final String issuer;
 
 	MembershipServiceImpl(OrganizationRepository organizations, MemberRepository members, InvitationRepository invitations,
 			OrganizationSettingsRepository settings, IntegrationRepository integrations, PlanLookup plans,
-			RolePermissionStore rolePermissions, ApplicationEventPublisher events, ArtemisAppSecProperties properties) {
+			RolePermissionStore rolePermissions, ApplicationEventPublisher events, FreeOrganizationLimit freeLimit,
+			ArtemisAppSecProperties properties) {
 		this.organizations = organizations;
 		this.members = members;
 		this.invitations = invitations;
@@ -61,6 +63,7 @@ class MembershipServiceImpl implements MembershipService {
 		this.plans = plans;
 		this.rolePermissions = rolePermissions;
 		this.events = events;
+		this.freeLimit = freeLimit;
 		this.issuer = properties.security().oidc().issuerUri();
 	}
 
@@ -118,6 +121,7 @@ class MembershipServiceImpl implements MembershipService {
 			throw new ApiProblemException(HttpStatus.CONFLICT, "organization-limit",
 					"You can own at most %d organizations".formatted(MAX_OWNED_ORGANIZATIONS));
 		}
+		freeLimit.requireRoomFor(identity.subject());
 		String slug = Slugs.fromName(command.name());
 		Slugs.requireAvailable(slug, organizations);
 		Organization organization = organizations.save(new Organization(slug, command.name().strip()));
