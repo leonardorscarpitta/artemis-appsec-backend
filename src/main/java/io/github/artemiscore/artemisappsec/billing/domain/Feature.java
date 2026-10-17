@@ -4,7 +4,9 @@ import com.fasterxml.jackson.annotation.JsonValue;
 
 /** Capabilities that depend on the organization's plan. */
 public enum Feature {
-	AI_TRIAGE("aiTriage");
+	AI_TRIAGE("aiTriage"),
+	SCHEDULED_SCANS("scheduledScans"),
+	ORGANIZATION_RENAME("organizationRename");
 
 	private final String code;
 
