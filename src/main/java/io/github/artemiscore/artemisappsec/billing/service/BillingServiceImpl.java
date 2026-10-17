@@ -63,11 +63,19 @@ class BillingServiceImpl implements BillingService {
 
 	@Override
 	@Transactional
-	public void consumeScan(UUID organizationId) {
+	public LocalDate consumeScan(UUID organizationId) {
 		int limit = current(organizationId).getPlan().monthlyScanLimit();
-		if (!usage.tryIncrement(organizationId, currentMonth(), limit)) {
+		LocalDate month = currentMonth();
+		if (!usage.tryIncrement(organizationId, month, limit)) {
 			throw new BusinessRuleException("Monthly scan limit reached (%d scans on the current plan)".formatted(limit));
 		}
+		return month;
+	}
+
+	@Override
+	@Transactional
+	public void refundScan(UUID organizationId, LocalDate month) {
+		usage.decrement(organizationId, month);
 	}
 
 	@Override
