@@ -159,8 +159,12 @@ class ScanJobServiceImpl implements ScanJobService {
 
 	@Override
 	@Transactional
-	public void fail(UUID runId, String reason) {
-		runs.fail(runId, Text.clean(reason, MAX_REASON_CHARS));
+	public void fail(UUID runId, String reason, boolean accessLost) {
+		String cleaned = Text.clean(reason, MAX_REASON_CHARS);
+		if (accessLost) {
+			projects.recordAccessLost(runs.job(runId).projectId(), cleaned);
+		}
+		runs.fail(runId, cleaned);
 	}
 
 	/** Bounds every field to its storage size and strips characters PostgreSQL cannot store. */

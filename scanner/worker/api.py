@@ -37,8 +37,8 @@ class ApiClient:
     def complete(self, run_id: str) -> None:
         self._request("POST", f"/jobs/{run_id}/complete", {})
 
-    def fail(self, run_id: str, reason: str) -> None:
-        self._request("POST", f"/jobs/{run_id}/fail", {"reason": reason[:500]})
+    def fail(self, run_id: str, reason: str, access_lost: bool = False) -> None:
+        self._request("POST", f"/jobs/{run_id}/fail", {"reason": reason[:500], "accessLost": access_lost})
 
     def access_check(self, check_id: str, ok: bool, message: str, host_key: str | None) -> None:
         self._request("PUT", f"/access-checks/{check_id}",

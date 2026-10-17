@@ -59,7 +59,7 @@ class JobController {
 
 	@PostMapping("/{runId}/fail")
 	ResponseEntity<Void> fail(@PathVariable UUID runId, @Valid @RequestBody FailRequest request) {
-		jobs.fail(runId, request.reason());
+		jobs.fail(runId, request.reason(), Boolean.TRUE.equals(request.accessLost()));
 		return ResponseEntity.noContent().build();
 	}
 }

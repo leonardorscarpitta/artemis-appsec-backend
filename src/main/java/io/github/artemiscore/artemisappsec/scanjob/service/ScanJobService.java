@@ -22,5 +22,5 @@ public interface ScanJobService {
 
 	void complete(UUID runId);
 
-	void fail(UUID runId, String reason);
+	void fail(UUID runId, String reason, boolean accessLost);
 }

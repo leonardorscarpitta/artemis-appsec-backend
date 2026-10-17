@@ -35,6 +35,14 @@ def process(job: dict, api: ApiClient, config: Config) -> None:
         try:
             if repo.get("access") == "ssh":
                 ssh = open_ssh_session(work, repo["cloneUrl"], job.get("credentials"))
+                # Re-check access first: the deploy key may have been removed since the last "Test access".
+                ok, message = ls_remote(repo["cloneUrl"], repo.get("branch", "main"), ssh)
+                if not ok:
+                    access_lost = not message.startswith("Access OK")
+                    log.info("run %s: access check failed (%s)", job.get("number"), message)
+                    api.fail(run_id, f"Repository access check failed: {message}" if access_lost else message,
+                             access_lost=access_lost)
+                    return
             sha, subject = clone(repo["cloneUrl"], repo.get("branch", "main"), src, config.clone_timeout,
                                  int(limits.get("maxRepoSizeMb", 500)), ssh)
         except CloneRefused as refused:

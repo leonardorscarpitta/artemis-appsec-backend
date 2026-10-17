@@ -64,4 +64,7 @@ public interface ProjectService {
 
 	/** Marks a private repository as needing a (new) deploy key, e.g. after its key was revoked. */
 	void resetAccess(UUID projectId);
+
+	/** A scan found that the deploy key no longer works: records a failed access check and marks access as failed. */
+	void recordAccessLost(UUID projectId, String message);
 }

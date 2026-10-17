@@ -261,11 +261,13 @@ Repository summaries also carry `access` (`public` \| `ssh`) and `accessStatus` 
 | `POST /internal/v1/jobs/{runId}/source` | `{commitSha, commitMessage}` | `204` |
 | `PUT /internal/v1/jobs/{runId}/stages/{stage}` | `{status: completed\|skipped\|error, tool, durationSeconds, log, findings: [Finding]}` | `{status: passed\|warning\|failed\|skipped}`; `409` if the run is not running or the stage was already reported; `400` if the tool differs from the queued one |
 | `POST /internal/v1/jobs/{runId}/complete` | — | `204` |
-| `POST /internal/v1/jobs/{runId}/fail` | `{reason}` | `204` (e.g. the repository could not be cloned) |
+| `POST /internal/v1/jobs/{runId}/fail` | `{reason, accessLost?}` | `204` (e.g. the repository could not be cloned) |
 
 **Monorepos:** repository settings carry `folders: [{path, stack}]` (create and `PUT /settings`; empty = whole repository; up to 20 unique relative paths of letters/digits/`.`/`_`/`-` segments, no `.`/`..`, ≤ 120 chars; table `project_folder`, V14). The repository's `stack` becomes the first folder's. A scan may pick some of them: `POST /api/v1/repositories/{name}/scans` with optional `{"folders": ["frontend"]}` (unknown folder → 400; omitted/empty = all); the selection is stored on the run (`pipeline_run_folder`, V17, exposed as `folders` on runs) and reused by re-runs (folders since removed are dropped). The claim sends the run's folders as `repository.paths`; the runner fails the run if a folder is missing on the branch, otherwise runs every stage on each folder in turn and merges the results (findings capped at 5 000 per stage, logs prefixed with `[folder]`), prefixing finding paths so they stay relative to the repository root.
 
 **Findings CSV:** `GET /api/v1/findings/export` (same filters as `GET /findings`, `viewFindings`) → `text/csv; charset=UTF-8` with a BOM, `Content-Disposition: attachment; filename="artemis-findings-<org>-<date>.csv"`; RFC 4180 quoting and CSV-injection protection (cells starting with `= + - @` tab/CR get a leading `'`).
+
+**Access re-check before every scan:** after loading the deploy key and before cloning, the runner runs `git ls-remote` (same as Test access). If the key no longer works it fails the run with `accessLost: true`; the API records a failed access check and sets the repository's access to `failed`, so scans stay locked (409) until Test access succeeds again. A missing branch fails the run without touching access.
 
 **Removing a repository:** `DELETE /api/v1/repositories/{name}` (`pipelines` permission) → `204`; the database cascades its findings, runs, reports, deploy keys and risk acceptances.
 

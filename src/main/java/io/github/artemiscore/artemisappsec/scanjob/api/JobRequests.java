@@ -29,7 +29,8 @@ final class JobRequests {
 			@NotNull @Size(max = 4000) String commitMessage) {
 	}
 
-	record FailRequest(@NotBlank @Size(max = 500) String reason) {
+	/** @param accessLost the runner's pre-scan access check failed (deploy key removed, repository gone, …) */
+	record FailRequest(@NotBlank @Size(max = 500) String reason, Boolean accessLost) {
 	}
 
 	/** {@code hostKey}: the known_hosts line(s) the runner used, recorded for non-pinned servers on first contact. */
