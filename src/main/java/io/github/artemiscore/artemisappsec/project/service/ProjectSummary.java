@@ -16,8 +16,9 @@ import io.github.artemiscore.artemisappsec.project.domain.StackSource;
  * {@code ssh} (private, with an Artemis deploy key); {@code accessStatus} is null for public repositories.
  * {@code stack} is null while {@code stackSource} is {@code pending} (automatic detection not done yet).
  * {@code nextScanAt} is set only for timed schedules; they run only on plans with scheduled scans.
+ * {@code removed}: the repository was removed but its history (findings, runs) was kept.
  */
 public record ProjectSummary(UUID id, @JsonIgnore UUID organizationId, String name, String url, String branch, Stack stack, List<ProjectFolder> folders, @JsonIgnore String containerImage, String access,
 		AccessStatus accessStatus, StackSource stackSource, ScanSchedule schedule,
-		Instant nextScanAt, Instant lastScanAt, Long openFindings) {
+		Instant nextScanAt, Instant lastScanAt, Long openFindings, @JsonIgnore boolean removed) {
 }

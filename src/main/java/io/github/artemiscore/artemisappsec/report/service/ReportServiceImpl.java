@@ -75,8 +75,9 @@ class ReportServiceImpl implements ReportService {
 		}
 	}
 
+	/** Includes removed repositories, whose history is kept. */
 	private Map<UUID, String> projectNames(UUID organizationId) {
-		return projects.findAll(organizationId).stream().collect(Collectors.toMap(ProjectSummary::id, ProjectSummary::name));
+		return projects.findAllIncludingRemoved(organizationId).stream().collect(Collectors.toMap(ProjectSummary::id, ProjectSummary::name));
 	}
 
 	private static ReportSummary toSummary(Report r, Map<UUID, String> names, Locale locale) {

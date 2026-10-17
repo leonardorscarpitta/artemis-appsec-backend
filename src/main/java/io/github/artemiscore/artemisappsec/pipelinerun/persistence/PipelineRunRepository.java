@@ -27,6 +27,8 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, UUID>,
 	List<PipelineRun> findByProjectIdInAndStartedAtAfter(Collection<UUID> projectIds, Instant since);
 
 	@EntityGraph(attributePaths = "stages")
+	List<PipelineRun> findByProjectIdAndStatusIn(UUID projectId, Collection<RunStatus> statuses);
+
 	List<PipelineRun> findByStatusAndStartedAtBefore(RunStatus status, Instant before);
 
 	boolean existsByProjectIdAndStatusIn(UUID projectId, Collection<RunStatus> statuses);

@@ -16,7 +16,7 @@ final class FindingCsv {
 
 	private static final List<String> HEADER = List.of("reference", "kind", "severity", "cvss", "status", "repository",
 			"title", "cve", "rule", "package", "installed_version", "fixed_version", "ecosystem", "path", "line", "stage",
-			"tool", "detected_at", "status_changed_at");
+			"tool", "detected_at", "status_changed_at", "repository_removed");
 
 	private FindingCsv() {
 	}
@@ -30,7 +30,7 @@ final class FindingCsv {
 					f.repository(), f.title(), f.cve(), f.ruleId(), packageName, f.installedVersion(), f.fixedVersion(),
 					wire(f.ecosystem()), f.location() == null ? null : f.location().path(),
 					f.location() == null ? null : f.location().line(), wire(f.stage()), f.tool(), f.detectedAt(),
-					f.statusChangedAt())));
+					f.statusChangedAt(), f.repositoryRemoved())));
 		}
 		return csv.toString();
 	}

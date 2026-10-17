@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -65,15 +66,17 @@ class PipelineRunServiceImpl implements PipelineRunService {
 
 	@Override
 	public List<RunView> find(UUID organizationId, RunFilter filter) {
-		Map<UUID, String> names = projectNames(organizationId);
+		Map<UUID, ProjectSummary> names = projectNames(organizationId);
 		if (names.isEmpty()) {
 			return List.of();
 		}
 		UUID projectId = null;
 		if (filter.repository() != null && !filter.repository().isBlank()) {
-			projectId = names.entrySet().stream()
-				.filter(e -> e.getValue().equals(filter.repository()))
-				.map(Map.Entry::getKey)
+			// A removed repository may share its name with the one connected again; the connected one wins.
+			projectId = names.values().stream()
+				.filter(p -> p.name().equals(filter.repository()))
+				.sorted(Comparator.comparing(ProjectSummary::removed))
+				.map(ProjectSummary::id)
 				.findFirst()
 				.orElse(null);
 			if (projectId == null) {
@@ -87,7 +90,7 @@ class PipelineRunServiceImpl implements PipelineRunService {
 
 	@Override
 	public RunsSummary summary(UUID organizationId) {
-		Map<UUID, String> names = projectNames(organizationId);
+		Map<UUID, ProjectSummary> names = projectNames(organizationId);
 		List<PipelineRun> recent = names.isEmpty() ? List.of()
 				: runs.findByProjectIdInAndStartedAtAfter(names.keySet(), Instant.now(clock).minus(SUMMARY_WINDOW));
 		long finished = recent.stream().filter(r -> r.getStatus().isFinished()).count();
@@ -104,7 +107,7 @@ class PipelineRunServiceImpl implements PipelineRunService {
 
 	@Override
 	public RunDetails get(UUID organizationId, long number) {
-		Map<UUID, String> names = projectNames(organizationId);
+		Map<UUID, ProjectSummary> names = projectNames(organizationId);
 		return toDetails(load(number, names), names);
 	}
 
@@ -112,10 +115,14 @@ class PipelineRunServiceImpl implements PipelineRunService {
 	@Transactional
 	public RunDetails rerun(UUID organizationId, long number, String actor) {
 		PipelineRun source = load(number, projectNames(organizationId));
-		LocalDate quotaMonth = billing.consumeScan(organizationId);
 		ProjectSummary project = projects.findById(source.getProjectId())
 			.orElseThrow(() -> new ResourceNotFoundException("Repository", source.getProjectId()));
+		if (project.removed()) {
+			throw new BusinessRuleException("Repository '%s' was removed; its runs are kept as history and cannot be re-run"
+				.formatted(project.name()));
+		}
 		requireVerifiedAccess(project);
+		LocalDate quotaMonth = billing.consumeScan(organizationId);
 		List<StageSelection> stages = enabledStages(organizationId, project.name());
 		// Folders removed from the repository since then are dropped; none left means all of them.
 		List<String> current = project.folders().stream().map(f -> f.path()).toList();
@@ -123,7 +130,7 @@ class PipelineRunServiceImpl implements PipelineRunService {
 		PipelineRun run = PipelineRun.queued(runs.nextNumber(), source.getProjectId(), source.getBranch(),
 				source.getCommitSha(), source.getCommitMessage(), actor, stages, folders);
 		run.reserveQuota(quotaMonth);
-		return toDetails(runs.save(run), Map.of(project.id(), project.name()));
+		return toDetails(runs.save(run), Map.of(project.id(), project));
 	}
 
 	@Override
@@ -154,7 +161,7 @@ class PipelineRunServiceImpl implements PipelineRunService {
 		PipelineRun run = PipelineRun.queued(runs.nextNumber(), project.id(), project.branch(), PENDING_COMMIT,
 				PENDING_MESSAGE, trigger, actor, stages, folders);
 		run.reserveQuota(quotaMonth);
-		return toDetails(runs.save(run), Map.of(project.id(), project.name()));
+		return toDetails(runs.save(run), Map.of(project.id(), project));
 	}
 
 	@Override
@@ -247,12 +254,24 @@ class PipelineRunServiceImpl implements PipelineRunService {
 	@Override
 	@Transactional
 	public RunDetails cancel(UUID organizationId, long number) {
-		Map<UUID, String> names = projectNames(organizationId);
+		Map<UUID, ProjectSummary> names = projectNames(organizationId);
 		PipelineRun run = load(number, names);
 		run.cancel();
 		refundIfNotScanned(run);
 		return toDetails(run, names);
 	}
+
+	@Override
+	@Transactional
+	public int cancelActive(UUID projectId) {
+		List<PipelineRun> active = runs.findByProjectIdAndStatusIn(projectId, List.of(RunStatus.QUEUED, RunStatus.RUNNING));
+		active.forEach(run -> {
+			run.cancel();
+			refundIfNotScanned(run);
+		});
+		return active.size();
+	}
+
 
 	/** A run that ended before the runner reported any stage gives its monthly scan back. */
 	private void refundIfNotScanned(PipelineRun run) {
@@ -262,7 +281,7 @@ class PipelineRunServiceImpl implements PipelineRunService {
 		});
 	}
 
-	private PipelineRun load(long number, Map<UUID, String> organizationProjects) {
+	private PipelineRun load(long number, Map<UUID, ProjectSummary> organizationProjects) {
 		return runs.findByNumber(number)
 			.filter(r -> organizationProjects.containsKey(r.getProjectId()))
 			.orElseThrow(() -> new ResourceNotFoundException("Pipeline run", number));
@@ -291,17 +310,20 @@ class PipelineRunServiceImpl implements PipelineRunService {
 		return all.stream().filter(requested::contains).toList();
 	}
 
-	private Map<UUID, String> projectNames(UUID organizationId) {
-		return projects.findAll(organizationId).stream().collect(Collectors.toMap(ProjectSummary::id, ProjectSummary::name));
+	/** Includes removed repositories, whose runs stay visible as history. */
+	private Map<UUID, ProjectSummary> projectNames(UUID organizationId) {
+		return projects.findAllIncludingRemoved(organizationId).stream().collect(Collectors.toMap(ProjectSummary::id, p -> p));
 	}
 
-	private static RunView toView(PipelineRun r, Map<UUID, String> names) {
-		return new RunView(r.getNumber(), names.getOrDefault(r.getProjectId(), "unknown"), r.getBranch(), r.getCommitSha(),
-				r.getCommitMessage(), r.getTrigger(), r.getActor(), r.getStatus(), r.getStartedAt(), r.getDurationSeconds(),
-				r.getNewFindings(), r.totalFindings(), r.failedByPolicy(), r.getFolders(), r.isQuotaRefunded());
+	private static RunView toView(PipelineRun r, Map<UUID, ProjectSummary> names) {
+		ProjectSummary project = names.get(r.getProjectId());
+		return new RunView(r.getNumber(), project == null ? "unknown" : project.name(), project != null && project.removed(),
+				r.getBranch(), r.getCommitSha(), r.getCommitMessage(), r.getTrigger(), r.getActor(), r.getStatus(),
+				r.getStartedAt(), r.getDurationSeconds(), r.getNewFindings(), r.totalFindings(), r.failedByPolicy(),
+				r.getFolders(), r.isQuotaRefunded());
 	}
 
-	private static RunDetails toDetails(PipelineRun r, Map<UUID, String> names) {
+	private static RunDetails toDetails(PipelineRun r, Map<UUID, ProjectSummary> names) {
 		return new RunDetails(toView(r, names), r.getStages().stream().map(PipelineRunServiceImpl::toStageView).toList());
 	}
 
