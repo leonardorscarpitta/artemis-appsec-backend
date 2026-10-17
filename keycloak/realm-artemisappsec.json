@@ -1,6 +1,7 @@
 {
   "realm": "artemisappsec",
   "displayName": "Artemis",
+  "loginTheme": "artemis",
   "enabled": true,
   "sslRequired": "external",
   "registrationAllowed": true,
@@ -57,6 +58,7 @@
   "clients": [
     {
       "clientId": "artemisappsec-web",
+      "baseUrl": "${ARTEMISAPPSEC_WEB_ORIGIN}",
       "name": "Artemis",
       "enabled": true,
       "publicClient": true,
