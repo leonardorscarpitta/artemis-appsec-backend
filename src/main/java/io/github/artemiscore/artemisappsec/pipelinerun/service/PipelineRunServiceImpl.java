@@ -104,7 +104,7 @@ class PipelineRunServiceImpl implements PipelineRunService {
 	@Transactional
 	public RunDetails rerun(UUID organizationId, long number, String actor) {
 		PipelineRun source = load(number, projectNames(organizationId));
-		billing.assertCanScan(organizationId);
+		billing.consumeScan(organizationId);
 		ProjectSummary project = projects.findById(source.getProjectId())
 			.orElseThrow(() -> new ResourceNotFoundException("Repository", source.getProjectId()));
 		requireVerifiedAccess(project);
@@ -123,7 +123,7 @@ class PipelineRunServiceImpl implements PipelineRunService {
 		ProjectDetails project = projects.getByName(organizationId, repository);
 		requireVerifiedAccess(project.project());
 		List<String> selected = selectFolders(project.project(), folders);
-		billing.assertCanScan(organizationId);
+		billing.consumeScan(organizationId);
 		List<StageSelection> stages = enabledStages(organizationId, repository);
 		PipelineRun run = PipelineRun.queued(runs.nextNumber(), project.project().id(), project.project().branch(),
 				PENDING_COMMIT, PENDING_MESSAGE, actor, stages, selected);
