@@ -14,12 +14,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.github.artemiscore.artemisappsec.billing.domain.Feature;
+import io.github.artemiscore.artemisappsec.billing.service.BillingService;
 import io.github.artemiscore.artemisappsec.project.domain.AccessCheck;
 import io.github.artemiscore.artemisappsec.project.domain.AccessCheckStatus;
 import io.github.artemiscore.artemisappsec.project.domain.AccessStatus;
 import io.github.artemiscore.artemisappsec.project.domain.Folder;
 import io.github.artemiscore.artemisappsec.project.domain.PipelineStageConfig;
 import io.github.artemiscore.artemisappsec.project.domain.Project;
+import io.github.artemiscore.artemisappsec.project.domain.ScanSchedule;
 import io.github.artemiscore.artemisappsec.project.domain.Stack;
 import io.github.artemiscore.artemisappsec.project.domain.StackSource;
 import io.github.artemiscore.artemisappsec.project.persistence.AccessCheckRepository;
@@ -42,11 +45,13 @@ class ProjectServiceImpl implements ProjectService {
 	private final AccessCheckRepository checks;
 	private final RepositoryKeys keys;
 	private final ObjectProvider<PipelinePolicy> pipelinePolicy;
+	private final BillingService billing;
 
 	ProjectServiceImpl(ProjectRepository projects, ObjectProvider<ProjectFindingStats> findingStats,
 			ApplicationEventPublisher events, AccessCheckRepository checks, RepositoryKeys keys,
-			ObjectProvider<PipelinePolicy> pipelinePolicy) {
+			ObjectProvider<PipelinePolicy> pipelinePolicy, BillingService billing) {
 		this.pipelinePolicy = pipelinePolicy;
+		this.billing = billing;
 		this.projects = projects;
 		this.findingStats = findingStats;
 		this.events = events;
@@ -92,6 +97,7 @@ class ProjectServiceImpl implements ProjectService {
 		if (!keys.enabled()) {
 			throw deployKeysDisabled();
 		}
+		requireSchedulePlan(organizationId, ScanSchedule.MANUAL, command.settings().schedule());
 		Project project = new Project(organizationId, name, command.url(), command.branch(), command.stack());
 		applySettings(project, command.settings());
 		if (!command.settings().folders().isEmpty()) {
@@ -108,6 +114,16 @@ class ProjectServiceImpl implements ProjectService {
 	@Transactional
 	public void recordScan(UUID projectId, Instant finishedAt) {
 		projects.findById(projectId).ifPresent(p -> p.recordScan(finishedAt));
+	}
+
+	@Override
+	@Transactional
+	public List<DueScan> claimDueScans(int limit) {
+		Instant now = Instant.now();
+		return projects.findAllById(projects.lockDueForScheduledScan(now, limit)).stream().map(p -> {
+			p.scheduleNextScan(now);
+			return new DueScan(p.getId(), p.getOrganizationId(), p.getName());
+		}).toList();
 	}
 
 	@Override
@@ -240,6 +256,15 @@ class ProjectServiceImpl implements ProjectService {
 				fingerprint, pinned, lastCheck);
 	}
 
+	/** Choosing a schedule other than manual needs the PRO plan; keeping an existing one (now inactive) is allowed. */
+	private void requireSchedulePlan(UUID organizationId, ScanSchedule current, ScanSchedule requested) {
+		if (requested != current && requested != ScanSchedule.MANUAL
+				&& !billing.isEntitled(organizationId, Feature.SCHEDULED_SCANS)) {
+			throw new ApiProblemException(HttpStatus.FORBIDDEN, "plan-required", "Scheduled scans need the PRO plan",
+					Map.of("feature", Feature.SCHEDULED_SCANS.code()));
+		}
+	}
+
 	private static ApiProblemException deployKeysDisabled() {
 		return new ApiProblemException(HttpStatus.SERVICE_UNAVAILABLE, "deploy-keys-disabled",
 				"Private repositories are not configured on this server");
@@ -249,6 +274,7 @@ class ProjectServiceImpl implements ProjectService {
 	@Transactional
 	public ProjectDetails updateSettings(UUID organizationId, String name, ProjectSettings settings) {
 		Project project = load(organizationId, name);
+		requireSchedulePlan(organizationId, project.getScanSchedule(), settings.schedule());
 		List<ProjectFolder> before = folders(project);
 		applySettings(project, settings);
 		if (!before.equals(settings.folders())) {
@@ -348,7 +374,7 @@ class ProjectServiceImpl implements ProjectService {
 	private static ProjectSummary toSummary(Project p, Map<UUID, Long> openFindings) {
 		Long open = openFindings == null ? null : openFindings.getOrDefault(p.getId(), 0L);
 		return new ProjectSummary(p.getId(), p.getOrganizationId(), p.getName(), p.getSshUrl(), p.getBranch(), visibleStack(p), folders(p), p.getContainerImage(), p.isPrivate() ? "ssh" : "public", p.getAccessStatus(), p.getStackSource(), p.getScanSchedule(),
-				p.getLastScanAt(), open);
+				p.getNextScanAt(), p.getLastScanAt(), open);
 	}
 
 	private ProjectDetails toDetails(Project p) {

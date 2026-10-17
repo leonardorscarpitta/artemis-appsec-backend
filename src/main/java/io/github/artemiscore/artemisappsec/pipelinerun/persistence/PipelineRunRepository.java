@@ -29,6 +29,8 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, UUID>,
 	@EntityGraph(attributePaths = "stages")
 	List<PipelineRun> findByStatusAndStartedAtBefore(RunStatus status, Instant before);
 
+	boolean existsByProjectIdAndStatusIn(UUID projectId, Collection<RunStatus> statuses);
+
 	/** Locks the oldest queued run so concurrent runners never claim the same one. */
 	@Query(value = "SELECT id FROM pipeline_run WHERE status = 'QUEUED' ORDER BY started_at, number LIMIT 1 FOR UPDATE SKIP LOCKED",
 			nativeQuery = true)

@@ -15,8 +15,9 @@ import io.github.artemiscore.artemisappsec.project.domain.StackSource;
  * {@code openFindings} is null when finding statistics are unavailable. {@code access} is {@code public} (HTTPS) or
  * {@code ssh} (private, with an Artemis deploy key); {@code accessStatus} is null for public repositories.
  * {@code stack} is null while {@code stackSource} is {@code pending} (automatic detection not done yet).
+ * {@code nextScanAt} is set only for timed schedules; they run only on plans with scheduled scans.
  */
 public record ProjectSummary(UUID id, @JsonIgnore UUID organizationId, String name, String url, String branch, Stack stack, List<ProjectFolder> folders, @JsonIgnore String containerImage, String access,
 		AccessStatus accessStatus, StackSource stackSource, ScanSchedule schedule,
-		Instant lastScanAt, Long openFindings) {
+		Instant nextScanAt, Instant lastScanAt, Long openFindings) {
 }

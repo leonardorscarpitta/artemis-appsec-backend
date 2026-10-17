@@ -222,12 +222,20 @@ Options: `--stages secrets,sast,...` and `--tool sca=Grype` / `--tool dockerfile
 
 Scans run in the separate scanner runner (see "Scanner runner"); the API only queues work and records results.
 
-1. A scan is queued by `POST /api/v1/repositories/{name}/scans` (manual, counts against the plan's monthly quota → `409` when exhausted), by re-running a run, or automatically when a public repository is connected (private ones wait until their deploy key is added). Runs keep a snapshot of each enabled stage: tool and fail threshold.
+1. A scan is queued by `POST /api/v1/repositories/{name}/scans` (manual, counts against the plan's monthly quota → `409` when exhausted), by re-running a run, by the scheduler (PRO, see "Scheduled scans"), or automatically when a public repository is connected (private ones wait until their deploy key is added). Runs keep a snapshot of each enabled stage: tool and fail threshold.
 2. The runner claims the oldest queued run (`SELECT … FOR UPDATE SKIP LOCKED`, so several runners never share a run). Stages that are not available yet (`dast`) are skipped at that point.
 3. For each stage the runner reports `completed`, `skipped` or `error` plus normalized findings. The API decides the stage status: `error` → `failed`; `completed` → `failed` when a finding reaches the stage's fail threshold (`failedBy`), `warning` when there are findings below it, `passed` otherwise.
 4. On `complete`, stages that were not reported are skipped and the run becomes `success` or `failed`; the repository's last scan time is updated. Runs still `running` after `SCANNER_STALE_RUN_MINUTES` (default 60) are failed by a scheduled sweep.
 
 Repository URLs must be SSH (`git@host:owner/repo.git`, `ssh://[git@]host[:port]/owner/repo(.git)`) — HTTPS is rejected with 400. The API also rejects hosts that cannot be a public Git server — single-label names (`db`, `api`, `localhost`), names starting with `-`, and IP literals in loopback, private, link-local (incl. `169.254.169.254`), shared (100.64/10), multicast or unique-local ranges — and URLs whose repository name would be empty, `.` or `..` (the runner still checks resolved addresses before connecting). Every repository is cloned with an Artemis-generated deploy key (see "Private repositories"); `V18` converted existing `https://host/owner/repo` URLs to `git@host:owner/repo.git` (access pending). Queueing a scan (`POST …/scans`, re-run) returns `409` until the repository's access is **verified**, so no quota is spent on scans that cannot clone.
+
+### Scheduled scans (PRO)
+
+A repository's `schedule` is `manual` (default), `push` (stored only; no webhooks yet) or a timed interval: `6h`, `24h`, `7d`. Timed schedules need the `scheduledScans` entitlement (PRO): choosing one on another plan returns `403` with `code: plan-required`; schedules saved earlier stay stored but inactive.
+
+- `project.next_scan_at` (V36, UTC) is set to *now + interval* whenever the schedule changes and exposed as `nextScanAt` on repositories (null for manual/push).
+- `ScheduledScans` runs every minute: it locks up to 50 due repositories (`SELECT … FOR UPDATE SKIP LOCKED`) and moves `next_scan_at` one interval ahead in the same transaction, so several API instances never queue the same scan twice. Each due repository is then queued in its own transaction through the normal scan path (trigger `schedule`, actor `Artemis scheduler`): quota, policies and the runner's access re-check apply as for manual scans.
+- Skipped until the next interval (nothing is recorded): organizations without the entitlement, repositories whose access is not verified, repositories with a run already queued or running, and scans refused by the quota or by having no enabled stages.
 
 ### Private repositories
 

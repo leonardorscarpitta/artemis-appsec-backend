@@ -83,6 +83,11 @@ public class PipelineRun {
 	/** A queued manual run of the given stages, in pipeline order. */
 	public static PipelineRun queued(long number, UUID projectId, String branch, String commitSha, String commitMessage,
 			String actor, List<StageSelection> selection, List<String> folders) {
+		return queued(number, projectId, branch, commitSha, commitMessage, RunTrigger.MANUAL, actor, selection, folders);
+	}
+
+	public static PipelineRun queued(long number, UUID projectId, String branch, String commitSha, String commitMessage,
+			RunTrigger trigger, String actor, List<StageSelection> selection, List<String> folders) {
 		PipelineRun run = new PipelineRun();
 		run.folders.addAll(folders);
 		run.id = UUID.randomUUID();
@@ -91,7 +96,7 @@ public class PipelineRun {
 		run.branch = branch;
 		run.commitSha = commitSha;
 		run.commitMessage = commitMessage;
-		run.trigger = RunTrigger.MANUAL;
+		run.trigger = trigger;
 		run.actor = actor;
 		run.status = RunStatus.QUEUED;
 		run.startedAt = Instant.now();
