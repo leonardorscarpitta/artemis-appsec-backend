@@ -71,6 +71,15 @@ API ──http──> keycloak:8080/realms/artemisappsec/protocol/openid-connect
 - **TLS:** Caddy terminates HTTPS with its local CA at `https://auth.artemisappsec.localhost:9443` (`*.localhost` resolves to your machine). Trust Caddy's root CA once (`docker compose cp auth-proxy:/data/caddy/pki/authorities/local/root.crt .`) or accept the warning. Keycloak runs with `--proxy-headers=xforwarded` and a fixed public `--hostname`.
 - **Realm:** self-registration (e-mail verification **off**: no outgoing mailbox yet; e-mails stay unique per account), Terms of Use / Privacy Policy acceptance on first sign-in (required action with links to the app), password policy (12–128 chars, not username/e-mail, history 3), brute-force protection, en/pt-BR, reset password, account deletion, Organizations enabled. Dev e-mails go to **Mailpit** (http://localhost:8025); set `KC_SMTP_*` for a real server.
 - **Client:** `artemisappsec-web`, public, Authorization Code + PKCE (S256), redirect `ARTEMISAPPSEC_WEB_ORIGIN/auth/callback`, post-logout redirect to the app, audience mapper adding `artemisappsec-api` to access tokens. `prompt=create` opens the registration page.
+- **No offline tokens:** the SPA client has no optional `offline_access` scope (long-lived offline refresh tokens in browser storage would outlive the SSO session if stolen). The realm file is only imported on first start; to apply this to an existing realm:
+  ```sh
+  docker compose exec keycloak sh -c '
+    k=/opt/keycloak/bin/kcadm.sh
+    $k config credentials --server http://localhost:8080 --realm master --user "$KC_BOOTSTRAP_ADMIN_USERNAME" --password "$KC_BOOTSTRAP_ADMIN_PASSWORD"
+    CID=$($k get clients -r artemisappsec -q clientId=artemisappsec-web --fields id --format csv --noquotes)
+    SID=$($k get client-scopes -r artemisappsec --fields id,name --format csv --noquotes | grep ",offline_access$" | cut -d, -f1)
+    $k delete clients/$CID/optional-client-scopes/$SID -r artemisappsec'
+  ```
 - **API validation:** issuer, expiry and audience (`artemisappsec-api`); principal = `preferred_username`. Tokens carry no roles: authorization is per organization (below).
 - **Database:** Keycloak uses its own database/role (`keycloak`) in the same PostgreSQL instance, created idempotently by the `keycloak-db-init` job (`KEYCLOAK_DB_PASSWORD`).
 - **Dev users:** `./keycloak/create-dev-users.sh` creates `ana.souza`, `carla.mendes`, `daniel.rocha` (verified e-mail, random passwords) and writes `keycloak/secrets/dev-credentials.txt` (git-ignored).

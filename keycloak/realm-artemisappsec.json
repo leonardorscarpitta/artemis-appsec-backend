@@ -73,7 +73,7 @@
         "post.logout.redirect.uris": "${ARTEMISAPPSEC_WEB_ORIGIN}/*"
       },
       "defaultClientScopes": ["web-origins", "acr", "basic", "profile", "email", "roles"],
-      "optionalClientScopes": ["offline_access"],
+      "optionalClientScopes": [],
       "protocolMappers": [
         {
           "name": "audience artemisappsec-api",
