@@ -100,7 +100,9 @@ class TeamServiceImpl implements TeamService {
 		});
 		// Invitations are not e-mailed yet: the invitee sees them after signing in with this address.
 		Invitation invitation = new Invitation(tenant.organizationId(), email, command.role(), inviterName(tenant));
-		return toView(invitations.save(invitation), Instant.now());
+		// save() merges (the id is pre-assigned) and returns a copy without the raw link token, so answer from this one.
+		invitations.save(invitation);
+		return toView(invitation, Instant.now());
 	}
 
 	@Override
