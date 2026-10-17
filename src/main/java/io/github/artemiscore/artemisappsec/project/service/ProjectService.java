@@ -52,7 +52,8 @@ public interface ProjectService {
 	Optional<AccessCheckJob> claimAccessCheck();
 
 	/** For the scanner: records a check result; {@code hostKey} (known_hosts lines) is kept on first contact only. */
-	void completeAccessCheck(UUID checkId, boolean ok, String message, String hostKey);
+	/** {@code detection}: the stack found in the repository's files on a successful check, or null. */
+	void completeAccessCheck(UUID checkId, boolean ok, String message, String hostKey, StackDetection detection);
 
 	int failStaleAccessChecks(Duration maxDuration);
 

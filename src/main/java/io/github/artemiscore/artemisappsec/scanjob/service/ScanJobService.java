@@ -3,6 +3,7 @@ package io.github.artemiscore.artemisappsec.scanjob.service;
 import java.util.Optional;
 import java.util.UUID;
 
+import io.github.artemiscore.artemisappsec.project.service.StackDetection;
 import io.github.artemiscore.artemisappsec.pipelinerun.domain.StageStatus;
 import io.github.artemiscore.artemisappsec.shared.domain.Stage;
 
@@ -13,7 +14,7 @@ public interface ScanJobService {
 	Optional<Assignment> claim();
 
 	/** Records an access check result; {@code hostKey} is the server's known_hosts line(s) seen by the runner. */
-	void completeAccessCheck(UUID checkId, boolean ok, String message, String hostKey);
+	void completeAccessCheck(UUID checkId, boolean ok, String message, String hostKey, StackDetection detection);
 
 	void recordSource(UUID runId, String commitSha, String commitMessage);
 

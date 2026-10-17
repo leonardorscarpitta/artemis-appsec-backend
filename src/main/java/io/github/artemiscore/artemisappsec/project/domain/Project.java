@@ -49,6 +49,10 @@ public class Project {
 	private Stack stack;
 
 	@Enumerated(EnumType.STRING)
+	@Column(name = "stack_source", nullable = false)
+	private StackSource stackSource = StackSource.MANUAL;
+
+	@Enumerated(EnumType.STRING)
 	@Column(name = "scan_schedule", nullable = false)
 	private ScanSchedule scanSchedule;
 
@@ -100,7 +104,9 @@ public class Project {
 		this.name = name;
 		this.sshUrl = sshUrl;
 		this.branch = branch;
-		this.stack = stack;
+		// No stack means "detect it automatically" (placeholder until the first successful access check).
+		this.stack = stack == null ? Stack.REACT : stack;
+		this.stackSource = stack == null ? StackSource.PENDING : StackSource.MANUAL;
 		this.scanSchedule = ScanSchedule.EVERY_24_HOURS;
 		this.dockerfileMode = DockerfileMode.RECOMMENDED;
 		this.createdAt = Instant.now();
@@ -211,6 +217,31 @@ public class Project {
 
 	public Stack getStack() {
 		return stack;
+	}
+
+	public StackSource getStackSource() {
+		return stackSource;
+	}
+
+	/** A user picked the stack (or edited the monorepo folders): detection no longer overrides it. */
+	public void chooseStack(Stack stack) {
+		this.stack = stack;
+		this.stackSource = StackSource.MANUAL;
+	}
+
+	public void markStackManual() {
+		this.stackSource = StackSource.MANUAL;
+	}
+
+	/** Applies an automatic detection unless the stack was chosen by a user. */
+	public boolean applyDetectedStack(Stack stack, List<Folder> folders) {
+		if (stackSource == StackSource.MANUAL) {
+			return false;
+		}
+		updateFolders(folders);
+		this.stack = folders.isEmpty() ? stack : folders.getFirst().getStack();
+		this.stackSource = StackSource.DETECTED;
+		return true;
 	}
 
 	public ScanSchedule getScanSchedule() {

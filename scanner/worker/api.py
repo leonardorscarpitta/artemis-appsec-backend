@@ -40,9 +40,11 @@ class ApiClient:
     def fail(self, run_id: str, reason: str, access_lost: bool = False) -> None:
         self._request("POST", f"/jobs/{run_id}/fail", {"reason": reason[:500], "accessLost": access_lost})
 
-    def access_check(self, check_id: str, ok: bool, message: str, host_key: str | None) -> None:
+    def access_check(self, check_id: str, ok: bool, message: str, host_key: str | None,
+                     detected: dict | None = None) -> None:
         self._request("PUT", f"/access-checks/{check_id}",
-                      {"status": "ok" if ok else "failed", "message": message[:500], "hostKey": host_key})
+                      {"status": "ok" if ok else "failed", "message": message[:500], "hostKey": host_key,
+                       "detected": detected})
 
     def _request(self, method: str, path: str, payload: dict) -> tuple[int, dict | None]:
         data = json.dumps(payload).encode()
