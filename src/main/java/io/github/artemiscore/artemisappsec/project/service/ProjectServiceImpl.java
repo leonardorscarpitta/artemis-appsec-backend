@@ -165,6 +165,18 @@ class ProjectServiceImpl implements ProjectService {
 
 	@Override
 	@Transactional
+	public void recordAccessLost(UUID projectId, String message) {
+		projects.findById(projectId).ifPresent(project -> {
+			AccessCheck check = new AccessCheck(projectId);
+			check.start();
+			check.finish(false, message);
+			checks.save(check);
+			project.updateAccess(AccessStatus.FAILED);
+		});
+	}
+
+	@Override
+	@Transactional
 	public int failStaleAccessChecks(Duration maxDuration) {
 		List<AccessCheck> stale = checks.findByStatusAndStartedAtBefore(AccessCheckStatus.RUNNING,
 				Instant.now().minus(maxDuration));
