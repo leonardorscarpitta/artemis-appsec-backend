@@ -1,5 +1,6 @@
 package io.github.artemiscore.artemisappsec.project.service;
 
+import java.net.InetAddress;
 import java.net.URI;
 import java.util.Base64;
 import java.util.Optional;
@@ -39,6 +40,33 @@ record GitHost(String host, int port) {
 			}
 		}
 		return Optional.empty();
+	}
+
+	/**
+	 * Hosts refused up front (the runner still checks the resolved addresses before connecting): option-like names,
+	 * single-label names (e.g. internal service names) and IP literals in loopback, private, link-local, CGNAT,
+	 * multicast or unique-local ranges.
+	 */
+	boolean disallowed() {
+		String name = host.startsWith("[") && host.endsWith("]") ? host.substring(1, host.length() - 1) : host;
+		if (name.isEmpty() || name.startsWith("-")) {
+			return true;
+		}
+		boolean literal = name.contains(":") || name.matches("[0-9.]+");
+		if (!literal) {
+			return !name.contains(".");
+		}
+		try {
+			InetAddress address = InetAddress.ofLiteral(name);
+			byte[] bytes = address.getAddress();
+			boolean sharedAddressSpace = bytes.length == 4 && (bytes[0] & 0xff) == 100 && (bytes[1] & 0xc0) == 64;
+			boolean uniqueLocal = bytes.length == 16 && (bytes[0] & 0xfe) == 0xfc;
+			return address.isLoopbackAddress() || address.isSiteLocalAddress() || address.isLinkLocalAddress()
+					|| address.isAnyLocalAddress() || address.isMulticastAddress() || sharedAddressSpace || uniqueLocal;
+		}
+		catch (IllegalArgumentException e) {
+			return true;
+		}
 	}
 
 	boolean pinned() {
