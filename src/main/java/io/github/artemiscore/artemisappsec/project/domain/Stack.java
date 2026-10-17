@@ -16,4 +16,8 @@ public enum Stack {
 	public String label() {
 		return label;
 	}
+
+	public static java.util.Optional<Stack> fromLabel(String label) {
+		return java.util.Arrays.stream(values()).filter(s -> s.label.equals(label)).findFirst();
+	}
 }

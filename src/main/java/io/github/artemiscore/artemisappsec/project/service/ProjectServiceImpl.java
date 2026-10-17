@@ -20,6 +20,8 @@ import io.github.artemiscore.artemisappsec.project.domain.AccessStatus;
 import io.github.artemiscore.artemisappsec.project.domain.Folder;
 import io.github.artemiscore.artemisappsec.project.domain.PipelineStageConfig;
 import io.github.artemiscore.artemisappsec.project.domain.Project;
+import io.github.artemiscore.artemisappsec.project.domain.Stack;
+import io.github.artemiscore.artemisappsec.project.domain.StackSource;
 import io.github.artemiscore.artemisappsec.project.persistence.AccessCheckRepository;
 import io.github.artemiscore.artemisappsec.project.persistence.ProjectRepository;
 import io.github.artemiscore.artemisappsec.shared.domain.FailThreshold;
@@ -92,6 +94,9 @@ class ProjectServiceImpl implements ProjectService {
 		}
 		Project project = new Project(organizationId, name, command.url(), command.branch(), command.stack());
 		applySettings(project, command.settings());
+		if (!command.settings().folders().isEmpty()) {
+			project.markStackManual();
+		}
 		applyPipeline(project, command.pipeline());
 		Project saved = projects.save(project);
 		keys.generate(saved.getId(), saved.getName());
@@ -148,7 +153,7 @@ class ProjectServiceImpl implements ProjectService {
 
 	@Override
 	@Transactional
-	public void completeAccessCheck(UUID checkId, boolean ok, String message, String hostKey) {
+	public void completeAccessCheck(UUID checkId, boolean ok, String message, String hostKey, StackDetection detection) {
 		AccessCheck check = checks.findById(checkId).orElseThrow(() -> new ResourceNotFoundException("Access check", checkId));
 		if (!check.isActive()) {
 			throw new BusinessRuleException("Access check %s is already finished".formatted(checkId));
@@ -159,6 +164,10 @@ class ProjectServiceImpl implements ProjectService {
 			GitHost host = GitHost.of(project.getSshUrl()).orElse(null);
 			if (ok && host != null && !host.pinned()) {
 				host.sanitizeKnownHosts(hostKey).ifPresent(project::recordHostKeyIfAbsent);
+			}
+			if (ok && detection != null) {
+				project.applyDetectedStack(detection.stack(),
+						detection.folders().stream().map(f -> new Folder(f.path(), f.stack())).toList());
 			}
 		});
 	}
@@ -240,7 +249,14 @@ class ProjectServiceImpl implements ProjectService {
 	@Transactional
 	public ProjectDetails updateSettings(UUID organizationId, String name, ProjectSettings settings) {
 		Project project = load(organizationId, name);
+		List<ProjectFolder> before = folders(project);
 		applySettings(project, settings);
+		if (!before.equals(settings.folders())) {
+			project.markStackManual();
+		} else if (settings.folders().isEmpty() && settings.stack() != null
+				&& (settings.stack() != project.getStack() || project.getStackSource() == StackSource.PENDING)) {
+			project.chooseStack(settings.stack());
+		}
 		return toDetails(project);
 	}
 
@@ -331,14 +347,19 @@ class ProjectServiceImpl implements ProjectService {
 
 	private static ProjectSummary toSummary(Project p, Map<UUID, Long> openFindings) {
 		Long open = openFindings == null ? null : openFindings.getOrDefault(p.getId(), 0L);
-		return new ProjectSummary(p.getId(), p.getOrganizationId(), p.getName(), p.getSshUrl(), p.getBranch(), p.getStack(), folders(p), p.getContainerImage(), p.isPrivate() ? "ssh" : "public", p.getAccessStatus(), p.getScanSchedule(),
+		return new ProjectSummary(p.getId(), p.getOrganizationId(), p.getName(), p.getSshUrl(), p.getBranch(), visibleStack(p), folders(p), p.getContainerImage(), p.isPrivate() ? "ssh" : "public", p.getAccessStatus(), p.getStackSource(), p.getScanSchedule(),
 				p.getLastScanAt(), open);
 	}
 
 	private ProjectDetails toDetails(Project p) {
 		ProjectSettings settings = new ProjectSettings(p.getScanSchedule(), p.getAutomaticActions(), p.getDockerfileMode(),
-				p.getCustomDockerfile(), folders(p), p.getContainerImage());
+				p.getCustomDockerfile(), folders(p), p.getContainerImage(), visibleStack(p));
 		return new ProjectDetails(toSummary(p, openFindings(List.of(p))), settings, p.getPipeline().stream().map(ProjectServiceImpl::toView).toList());
+	}
+
+	/** The stored stack is only a placeholder until automatic detection has run. */
+	private static Stack visibleStack(Project p) {
+		return p.getStackSource() == StackSource.PENDING ? null : p.getStack();
 	}
 
 	private static List<ProjectFolder> folders(Project p) {

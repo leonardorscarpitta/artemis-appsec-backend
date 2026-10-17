@@ -7,6 +7,7 @@ from pathlib import Path
 from .api import ApiClient
 from .clone import CloneRefused, SshSession, clone, keyscan, known_hosts_for, ls_remote, validate_ssh_url
 from .config import Config
+from .detect import detect
 from .sanitize import safe_log
 from .scan import run_stage
 from .tools import MAX_FINDINGS
@@ -103,7 +104,8 @@ def process(job: dict, api: ApiClient, config: Config) -> None:
 
 
 def process_access_check(job: dict, api: ApiClient, config: Config) -> None:
-    """Verifies the deploy key can read the repository (git ls-remote of the branch); nothing is cloned."""
+    """Verifies the deploy key can read the repository (git ls-remote of the branch); when it can, clones the branch
+    only to detect the project's stack from its manifest files, then wipes the copy."""
     check_id = job["checkId"]
     repo = job["repository"]
     work = config.workspace / f"check-{check_id}"
@@ -111,6 +113,7 @@ def process_access_check(job: dict, api: ApiClient, config: Config) -> None:
     work.mkdir(parents=True)
     ssh = None
     host_key = None
+    detected = None
     try:
         target = validate_ssh_url(repo["cloneUrl"])
         credentials = job.get("credentials") or {}
@@ -121,6 +124,8 @@ def process_access_check(job: dict, api: ApiClient, config: Config) -> None:
             host_key = known_hosts
         ssh = SshSession(work / "ssh", credentials["sshPrivateKey"], known_hosts)
         ok, message = ls_remote(repo["cloneUrl"], repo.get("branch", "main"), ssh)
+        if ok:
+            detected = detect_stack(repo, work, ssh, config)
     except CloneRefused as refused:
         ok, message = False, str(refused)
     except KeyError:
@@ -130,7 +135,19 @@ def process_access_check(job: dict, api: ApiClient, config: Config) -> None:
             ssh.close()
         wipe(work)
     log.info("access check %s for %s -> %s", check_id, repo.get("name"), "ok" if ok else "failed")
-    api.access_check(check_id, ok, message, host_key if ok else None)
+    api.access_check(check_id, ok, message, host_key if ok else None, detected)
+
+
+def detect_stack(repo: dict, work: Path, ssh: SshSession, config: Config) -> dict | None:
+    """Best effort: a failed clone or detection never turns a successful access check into a failure."""
+    try:
+        clone(repo["cloneUrl"], repo.get("branch", "main"), work / "src", config.clone_timeout, 500, ssh)
+        return detect(work / "src")
+    except Exception as error:  # noqa: BLE001 - detection is optional
+        log.info("stack detection for %s skipped (%s)", repo.get("name"), type(error).__name__)
+        return None
+    finally:
+        wipe(work / "src")
 
 
 def open_ssh_session(work: Path, url: str, credentials: dict | None) -> SshSession:

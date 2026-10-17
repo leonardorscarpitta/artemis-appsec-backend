@@ -7,6 +7,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.github.artemiscore.artemisappsec.project.service.StackDetection;
 import io.github.artemiscore.artemisappsec.finding.service.DetectedIssue;
 import io.github.artemiscore.artemisappsec.finding.service.FindingService;
 import io.github.artemiscore.artemisappsec.finding.service.IngestionResult;
@@ -74,14 +75,14 @@ class ScanJobServiceImpl implements ScanJobService {
 
 	@Override
 	@Transactional
-	public void completeAccessCheck(UUID checkId, boolean ok, String message, String hostKey) {
-		projects.completeAccessCheck(checkId, ok, Text.clean(message, MAX_MESSAGE_CHARS), hostKey);
+	public void completeAccessCheck(UUID checkId, boolean ok, String message, String hostKey, StackDetection detection) {
+		projects.completeAccessCheck(checkId, ok, Text.clean(message, MAX_MESSAGE_CHARS), hostKey, detection);
 	}
 
 	private Optional<Assignment> accessCheck(AccessCheckJob check) {
 		Optional<SshCredentials> credentials = projects.sshCredentials(check.projectId(), "access check " + check.checkId());
 		if (credentials.isEmpty()) {
-			projects.completeAccessCheck(check.checkId(), false, NO_DEPLOY_KEY, null);
+			projects.completeAccessCheck(check.checkId(), false, NO_DEPLOY_KEY, null, null);
 			return Optional.empty();
 		}
 		return Optional.of(new AccessCheckAssignment("access-check", check.checkId(),
