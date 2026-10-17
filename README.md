@@ -41,6 +41,8 @@ docker compose up -d
 | Remote debugger (JDWP) | `localhost:5005` |
 | PostgreSQL | `localhost:5432` |
 
+Every port is published on **127.0.0.1 only** (the dev stack has weak defaults and JDWP has no authentication); nothing is reachable from the network.
+
 The `api` container runs `mvn spring-boot:run` with the `dev` profile. Maven compiles once at startup, so after changing code run `docker compose restart api` (DevTools also restarts the app when an IDE recompiles classes into `target/`). Dependencies are cached in `.m2/` (git-ignored).
 
 The `dev` profile loads demo data (`src/main/resources/db/seed`): the **Acme Corp** organization (slug `acme`) whose members `ana.souza@acme.example` (owner), `carla.mendes@…` (analyst) and `daniel.rocha@…` (developer) match the Keycloak dev users and are linked on their first sign-in. Set `AUTH_ENABLED=false` in `.env` to skip authentication entirely (local debugging only: every request then acts as owner of the organization in the header).
