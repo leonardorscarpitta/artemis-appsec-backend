@@ -2,6 +2,7 @@ package io.github.artemiscore.artemisappsec.organization.api;
 
 import java.net.URI;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.http.ResponseEntity;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -37,6 +39,9 @@ class TeamController {
 	record TransferOwnershipRequest(@NotNull UUID memberId) {
 	}
 
+	record RolePermissionsRequest(@NotNull Set<@NotNull Permission> permissions) {
+	}
+
 	private final TeamService team;
 
 	TeamController(TeamService team) {
@@ -47,7 +52,7 @@ class TeamController {
 	@GetMapping("/members")
 	List<MemberView> members(Tenant tenant) {
 		List<MemberView> members = team.findMembers(tenant.organizationId());
-		return tenant.role().permissions().contains(Permission.TEAM) ? members
+		return tenant.can(Permission.TEAM) ? members
 				: members.stream().map(MemberView::withoutEmail).toList();
 	}
 
@@ -97,8 +102,14 @@ class TeamController {
 	}
 
 	@GetMapping("/roles")
-	@WithoutOrganization
-	List<RoleView> roles() {
-		return team.roles();
+	List<RoleView> roles(Tenant tenant) {
+		return team.roles(tenant);
+	}
+
+	/** Owners and admins only (checked by role in the service); every role keeps viewFindings, billing is owner-only. */
+	@PutMapping("/roles/{role}/permissions")
+	@RequiresPermission(Permission.VIEW_FINDINGS)
+	RoleView updateRolePermissions(Tenant tenant, @PathVariable Role role, @Valid @RequestBody RolePermissionsRequest request) {
+		return team.updateRolePermissions(tenant, role, request.permissions());
 	}
 }
