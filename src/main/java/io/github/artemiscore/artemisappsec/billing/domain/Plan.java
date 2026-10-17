@@ -6,7 +6,7 @@ import com.fasterxml.jackson.annotation.JsonValue;
 
 /** Plan catalog. Prices are in cents of {@link #CURRENCY}, charged monthly; scans are pipeline runs per month. */
 public enum Plan {
-	FREE(0, 90, Set.of()),
+	FREE(0, 25, Set.of()),
 	PRO(2499, 300, Set.of(Feature.AI_TRIAGE, Feature.SCHEDULED_SCANS, Feature.ORGANIZATION_RENAME));
 
 	public static final String CURRENCY = "BRL";
