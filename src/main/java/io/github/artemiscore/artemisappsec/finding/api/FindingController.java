@@ -86,6 +86,6 @@ class FindingController {
 	@PostMapping("/{id}/status")
 	@RequiresPermission(Permission.TRIAGE)
 	FindingDetails changeStatus(Tenant tenant, @PathVariable UUID id, @Valid @RequestBody ChangeStatusCommand command) {
-		return findings.changeStatus(tenant.organizationId(), id, command);
+		return findings.changeStatus(tenant.organizationId(), id, command, tenant.actor());
 	}
 }

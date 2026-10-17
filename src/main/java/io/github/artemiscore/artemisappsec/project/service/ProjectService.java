@@ -26,6 +26,12 @@ public interface ProjectService {
 
 	ProjectDetails updatePipeline(UUID organizationId, String name, List<StageUpdate> stages);
 
+	/**
+	 * The pipeline a run executes: the repository's stages with the organization policy applied (required stages
+	 * enabled, fail thresholds raised to the organization's minimum).
+	 */
+	List<PipelineStageView> effectivePipeline(UUID organizationId, String name);
+
 	/** Deletes the repository and everything recorded for it (findings, runs, reports, keys, risk acceptances). */
 	void delete(UUID organizationId, String name);
 

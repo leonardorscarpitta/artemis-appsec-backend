@@ -9,7 +9,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
-/** A known vulnerability accepted for a repository until a given date. */
+/** A finding (of any kind) whose risk was accepted for a repository until a given date. */
 @Entity
 @Table(name = "risk_acceptance")
 public class RiskAcceptance {
@@ -17,7 +17,10 @@ public class RiskAcceptance {
 	@Id
 	private UUID id;
 
-	@Column(nullable = false)
+	/** Null for acceptances created before they were linked to findings. */
+	@Column(name = "finding_id")
+	private UUID findingId;
+
 	private String cve;
 
 	@Column(name = "project_id", nullable = false)
@@ -38,8 +41,10 @@ public class RiskAcceptance {
 	protected RiskAcceptance() {
 	}
 
-	public RiskAcceptance(String cve, UUID projectId, String justification, String approvedBy, LocalDate expiresAt) {
+	public RiskAcceptance(UUID findingId, String cve, UUID projectId, String justification, String approvedBy,
+			LocalDate expiresAt) {
 		this.id = UUID.randomUUID();
+		this.findingId = findingId;
 		this.cve = cve;
 		this.projectId = projectId;
 		this.justification = justification;
@@ -50,6 +55,10 @@ public class RiskAcceptance {
 
 	public UUID getId() {
 		return id;
+	}
+
+	public UUID getFindingId() {
+		return findingId;
 	}
 
 	public String getCve() {

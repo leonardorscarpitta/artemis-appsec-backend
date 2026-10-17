@@ -189,7 +189,7 @@ class PipelineRunServiceImpl implements PipelineRunService {
 	}
 
 	private List<StageSelection> enabledStages(UUID organizationId, String repository) {
-		List<StageSelection> stages = projects.getByName(organizationId, repository).pipeline().stream()
+		List<StageSelection> stages = projects.effectivePipeline(organizationId, repository).stream()
 			.filter(s -> s.enabled())
 			.map(s -> new StageSelection(s.id(), s.tool(), s.failOn()))
 			.toList();
