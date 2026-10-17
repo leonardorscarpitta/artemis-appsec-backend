@@ -92,7 +92,7 @@ class ScanJobServiceImpl implements ScanJobService {
 	/** Builds the scan job, or fails the run when a private repository cannot be cloned yet. */
 	private Optional<Assignment> scan(ClaimedRun run) {
 		Optional<ProjectSummary> found = projects.findById(run.projectId());
-		if (found.isEmpty()) {
+		if (found.isEmpty() || found.get().removed()) {
 			runs.fail(run.runId(), "the repository no longer exists");
 			return Optional.empty();
 		}

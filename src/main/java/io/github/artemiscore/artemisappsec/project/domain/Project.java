@@ -95,6 +95,10 @@ public class Project {
 	@Column(name = "created_at", nullable = false)
 	private Instant createdAt;
 
+	/** Set when the repository was removed but its history was kept. */
+	@Column(name = "deleted_at")
+	private Instant deletedAt;
+
 	protected Project() {
 	}
 
@@ -114,6 +118,19 @@ public class Project {
 		for (Stage stage : Stage.values()) {
 			pipeline.add(new PipelineStageConfig(this, stage, stage.enabledByDefault(), stage.defaultTool(), stage.defaultFailOn()));
 		}
+	}
+
+	/** Removes the repository but keeps its findings and runs; it can no longer be scanned. */
+	public void remove(Instant at) {
+		deletedAt = at;
+	}
+
+	public boolean isRemoved() {
+		return deletedAt != null;
+	}
+
+	public Instant getDeletedAt() {
+		return deletedAt;
 	}
 
 	public void updateSettings(ScanSchedule schedule, Set<AutomaticAction> actions, DockerfileMode dockerfileMode,

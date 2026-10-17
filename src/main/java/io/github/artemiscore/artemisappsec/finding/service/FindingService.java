@@ -15,7 +15,7 @@ public interface FindingService {
 	/** Accepting requires a justification and an expiry date and records a risk acceptance. */
 	FindingDetails changeStatus(UUID organizationId, UUID id, ChangeStatusCommand command, String actor);
 
-	/** Findings of the organization that still need attention (open or triaged). */
+	/** Findings of the organization that still need attention (open or triaged), leaving out removed repositories. */
 	List<FindingSummary> findActive(UUID organizationId);
 
 	/**

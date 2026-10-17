@@ -74,8 +74,10 @@ class FindingServiceImpl implements FindingService {
 			spec = spec.and(FindingSpecifications.hasStatus(query.status()));
 		}
 		if (query.repository() != null && !query.repository().isBlank()) {
+			// A removed repository may share its name with the one connected again; the connected one wins.
 			UUID projectId = projectsById.values().stream()
 				.filter(p -> p.name().equals(query.repository()))
+				.sorted(Comparator.comparing(ProjectSummary::removed))
 				.map(ProjectSummary::id)
 				.findFirst()
 				.orElse(null);
@@ -132,7 +134,8 @@ class FindingServiceImpl implements FindingService {
 
 	@Override
 	public List<FindingSummary> findActive(UUID organizationId) {
-		Map<UUID, ProjectSummary> projectsById = projectsById(organizationId);
+		Map<UUID, ProjectSummary> projectsById = projects.findAll(organizationId).stream()
+			.collect(Collectors.toMap(ProjectSummary::id, p -> p));
 		if (projectsById.isEmpty()) {
 			return List.of();
 		}
@@ -157,8 +160,9 @@ class FindingServiceImpl implements FindingService {
 		return primary.and(Sort.by("reference"));
 	}
 
+	/** Includes removed repositories: their findings stay visible as history. */
 	private Map<UUID, ProjectSummary> projectsById(UUID organizationId) {
-		return projects.findAll(organizationId).stream().collect(Collectors.toMap(ProjectSummary::id, p -> p));
+		return projects.findAllIncludingRemoved(organizationId).stream().collect(Collectors.toMap(ProjectSummary::id, p -> p));
 	}
 
 	private FindingDetails toDetails(Finding finding, Map<UUID, ProjectSummary> projectsById, Map<Severity, Integer> sla) {
@@ -188,7 +192,7 @@ class FindingServiceImpl implements FindingService {
 		FindingSummary.Location location = f.getLocationPath() == null ? null
 				: new FindingSummary.Location(f.getLocationPath(), f.getLocationLine());
 		return new FindingSummary(f.getId(), f.getReference(), f.getKind(), f.getRuleId(), f.getCve(),
-				project == null ? null : project.name(), f.getPackageName(), f.getPackageGroup(), f.getInstalledVersion(),
+				project == null ? null : project.name(), project != null && project.removed(), f.getPackageName(), f.getPackageGroup(), f.getInstalledVersion(),
 				f.getFixedVersion(), f.getEcosystem(), f.getTitle(), cvss, f.getSeverity(), f.getStatus(), f.getStage(),
 				f.getTool(), location, f.getDetectedAt(), f.getStatusChangedAt(), dueAt, overdue);
 	}

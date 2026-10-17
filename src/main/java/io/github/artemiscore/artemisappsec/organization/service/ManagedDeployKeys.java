@@ -71,6 +71,15 @@ class ManagedDeployKeys implements RepositoryKeys {
 
 	@Override
 	@Transactional
+	public void destroy(UUID projectId) {
+		keys.findByProjectIdAndManagedTrue(projectId).ifPresent(key -> {
+			keys.delete(key);
+			log.info("Deleted deploy key {} of a removed repository", key.getFingerprint());
+		});
+	}
+
+	@Override
+	@Transactional
 	public Optional<String> releasePrivateKey(UUID projectId, String purpose) {
 		return keys.findByProjectIdAndManagedTrue(projectId).map(key -> {
 			byte[] plain = cipher.decrypt(key.getId(),
