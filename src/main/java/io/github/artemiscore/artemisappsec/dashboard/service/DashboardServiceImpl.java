@@ -44,7 +44,8 @@ class DashboardServiceImpl implements DashboardService {
 			.max(Comparator.naturalOrder())
 			.orElse(null);
 		return new DashboardSummary(active.size(), countOf(bySeverity, Severity.CRITICAL), Math.round(average * 10) / 10.0,
-				lastScan, repositories.size(), bySeverity, active.stream().limit(RECENT_LIMIT).toList());
+				lastScan, repositories.size(), bySeverity, active.stream().limit(RECENT_LIMIT).toList(),
+				active.stream().filter(FindingSummary::overdue).count());
 	}
 
 	private static long countOf(List<SeverityCount> counts, Severity severity) {

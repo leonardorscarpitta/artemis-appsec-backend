@@ -53,15 +53,15 @@ class PolicyController {
 
 	@PostMapping("/risk-acceptances")
 	@RequiresPermission(Permission.TRIAGE)
-	ResponseEntity<RiskAcceptanceView> acceptRisk(Tenant tenant, @Valid @RequestBody AcceptRiskCommand command) {
-		RiskAcceptanceView created = policies.acceptRisk(tenant.organizationId(), command, tenant.actor());
-		return ResponseEntity.created(URI.create("/api/v1/risk-acceptances/" + created.id())).body(created);
+	ResponseEntity<List<RiskAcceptanceView>> acceptRisk(Tenant tenant, @Valid @RequestBody AcceptRiskCommand command) {
+		List<RiskAcceptanceView> created = policies.acceptRisk(tenant.organizationId(), command, tenant.actor());
+		return ResponseEntity.created(URI.create("/api/v1/risk-acceptances/" + created.getFirst().id())).body(created);
 	}
 
 	@DeleteMapping("/risk-acceptances/{id}")
 	@RequiresPermission(Permission.TRIAGE)
 	ResponseEntity<Void> revoke(Tenant tenant, @PathVariable UUID id) {
-		policies.revokeRiskAcceptance(tenant.organizationId(), id);
+		policies.revokeRiskAcceptance(tenant.organizationId(), id, tenant.actor());
 		return ResponseEntity.noContent().build();
 	}
 }

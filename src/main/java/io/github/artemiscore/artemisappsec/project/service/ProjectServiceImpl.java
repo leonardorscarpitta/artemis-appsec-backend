@@ -22,6 +22,7 @@ import io.github.artemiscore.artemisappsec.project.domain.PipelineStageConfig;
 import io.github.artemiscore.artemisappsec.project.domain.Project;
 import io.github.artemiscore.artemisappsec.project.persistence.AccessCheckRepository;
 import io.github.artemiscore.artemisappsec.project.persistence.ProjectRepository;
+import io.github.artemiscore.artemisappsec.shared.domain.FailThreshold;
 import io.github.artemiscore.artemisappsec.shared.domain.Stage;
 import io.github.artemiscore.artemisappsec.shared.error.ApiProblemException;
 import io.github.artemiscore.artemisappsec.shared.error.BusinessRuleException;
@@ -38,9 +39,12 @@ class ProjectServiceImpl implements ProjectService {
 	private final ApplicationEventPublisher events;
 	private final AccessCheckRepository checks;
 	private final RepositoryKeys keys;
+	private final ObjectProvider<PipelinePolicy> pipelinePolicy;
 
 	ProjectServiceImpl(ProjectRepository projects, ObjectProvider<ProjectFindingStats> findingStats,
-			ApplicationEventPublisher events, AccessCheckRepository checks, RepositoryKeys keys) {
+			ApplicationEventPublisher events, AccessCheckRepository checks, RepositoryKeys keys,
+			ObjectProvider<PipelinePolicy> pipelinePolicy) {
+		this.pipelinePolicy = pipelinePolicy;
 		this.projects = projects;
 		this.findingStats = findingStats;
 		this.events = events;
@@ -230,6 +234,28 @@ class ProjectServiceImpl implements ProjectService {
 	}
 
 	@Override
+	public List<PipelineStageView> effectivePipeline(UUID organizationId, String name) {
+		Project project = load(organizationId, name);
+		Map<Stage, PipelinePolicy.Gate> gates = gates(organizationId);
+		return project.getPipeline().stream().map(c -> {
+			PipelineStageView view = toView(c);
+			PipelinePolicy.Gate gate = gates.get(c.getStage());
+			if (gate == null) {
+				return view;
+			}
+			boolean enabled = view.enabled() || (gate.required() && view.available());
+			FailThreshold failOn = view.id().canFail() ? gate.strictest(view.failOn()) : view.failOn();
+			return new PipelineStageView(view.id(), view.phase(), view.tools(), view.tool(), enabled, failOn, view.minutes(),
+					view.available());
+		}).toList();
+	}
+
+	private Map<Stage, PipelinePolicy.Gate> gates(UUID organizationId) {
+		PipelinePolicy policy = pipelinePolicy.getIfAvailable();
+		return policy == null ? Map.of() : policy.gates(organizationId);
+	}
+
+	@Override
 	@Transactional
 	public void delete(UUID organizationId, String name) {
 		projects.delete(load(organizationId, name));
@@ -255,7 +281,22 @@ class ProjectServiceImpl implements ProjectService {
 		project.updateContainerImage(settings.containerImage());
 	}
 
-	private static void applyPipeline(Project project, List<StageUpdate> stages) {
+	private void applyPipeline(Project project, List<StageUpdate> stages) {
+		Map<Stage, PipelinePolicy.Gate> gates = gates(project.getOrganizationId());
+		for (StageUpdate s : stages) {
+			PipelinePolicy.Gate gate = gates.get(s.id());
+			if (gate == null) {
+				continue;
+			}
+			if (gate.required() && s.id().available() && !s.enabled()) {
+				throw new BusinessRuleException("The %s stage is required by the organization policy and cannot be disabled"
+					.formatted(s.id().wireValue()));
+			}
+			if (s.enabled() && s.id().canFail() && !gate.allows(s.failOn())) {
+				throw new BusinessRuleException("The organization policy requires the %s stage to fail on %s or stricter"
+					.formatted(s.id().wireValue(), gate.minimumFailOn().wireValue()));
+			}
+		}
 		stages.forEach(s -> project.configureStage(s.id(), s.enabled(), s.tool(), s.failOn()));
 	}
 

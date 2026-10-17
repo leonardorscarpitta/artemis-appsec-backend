@@ -11,7 +11,9 @@ public interface PolicyService {
 
 	List<RiskAcceptanceView> findRiskAcceptances(UUID organizationId);
 
-	RiskAcceptanceView acceptRisk(UUID organizationId, AcceptRiskCommand command, String approvedBy);
+	/** Accepts the open finding(s) the command points to; each gets its own risk acceptance. */
+	List<RiskAcceptanceView> acceptRisk(UUID organizationId, AcceptRiskCommand command, String approvedBy);
 
-	void revokeRiskAcceptance(UUID organizationId, UUID id);
+	/** Removes the acceptance and reopens its finding. */
+	void revokeRiskAcceptance(UUID organizationId, UUID id, String actor);
 }
