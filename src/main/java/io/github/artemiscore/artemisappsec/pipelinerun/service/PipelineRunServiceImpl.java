@@ -20,10 +20,12 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.github.artemiscore.artemisappsec.billing.domain.Feature;
 import io.github.artemiscore.artemisappsec.billing.service.BillingService;
 import io.github.artemiscore.artemisappsec.pipelinerun.domain.PipelineRun;
 import io.github.artemiscore.artemisappsec.pipelinerun.domain.PipelineRun.StageSelection;
 import io.github.artemiscore.artemisappsec.pipelinerun.domain.RunStatus;
+import io.github.artemiscore.artemisappsec.pipelinerun.domain.RunTrigger;
 import io.github.artemiscore.artemisappsec.pipelinerun.domain.StageRun;
 import io.github.artemiscore.artemisappsec.pipelinerun.domain.StageStatus;
 import io.github.artemiscore.artemisappsec.pipelinerun.persistence.PipelineRunRepository;
@@ -42,6 +44,8 @@ class PipelineRunServiceImpl implements PipelineRunService {
 	/** Placeholders until the runner reports the commit it actually cloned. */
 	private static final String PENDING_COMMIT = "pending";
 	private static final String PENDING_MESSAGE = "Waiting for the scanner runner";
+	private static final String SCHEDULER_ACTOR = "Artemis scheduler";
+	private static final List<RunStatus> ACTIVE = List.of(RunStatus.QUEUED, RunStatus.RUNNING);
 
 	private final PipelineRunRepository runs;
 	private final ProjectService projects;
@@ -122,12 +126,29 @@ class PipelineRunServiceImpl implements PipelineRunService {
 	public RunDetails queueScan(UUID organizationId, String repository, String actor, List<String> folders) {
 		ProjectDetails project = projects.getByName(organizationId, repository);
 		requireVerifiedAccess(project.project());
-		List<String> selected = selectFolders(project.project(), folders);
+		return queue(organizationId, project.project(), RunTrigger.MANUAL, actor, selectFolders(project.project(), folders));
+	}
+
+	@Override
+	@Transactional
+	public Optional<RunDetails> queueScheduledScan(UUID organizationId, String repository) {
+		if (!billing.isEntitled(organizationId, Feature.SCHEDULED_SCANS)) {
+			return Optional.empty();
+		}
+		ProjectSummary project = projects.getByName(organizationId, repository).project();
+		if (project.accessStatus() != AccessStatus.VERIFIED || runs.existsByProjectIdAndStatusIn(project.id(), ACTIVE)) {
+			return Optional.empty();
+		}
+		return Optional.of(queue(organizationId, project, RunTrigger.SCHEDULE, SCHEDULER_ACTOR, selectFolders(project, null)));
+	}
+
+	private RunDetails queue(UUID organizationId, ProjectSummary project, RunTrigger trigger, String actor,
+			List<String> folders) {
 		billing.consumeScan(organizationId);
-		List<StageSelection> stages = enabledStages(organizationId, repository);
-		PipelineRun run = PipelineRun.queued(runs.nextNumber(), project.project().id(), project.project().branch(),
-				PENDING_COMMIT, PENDING_MESSAGE, actor, stages, selected);
-		return toDetails(runs.save(run), Map.of(project.project().id(), repository));
+		List<StageSelection> stages = enabledStages(organizationId, project.name());
+		PipelineRun run = PipelineRun.queued(runs.nextNumber(), project.id(), project.branch(), PENDING_COMMIT,
+				PENDING_MESSAGE, trigger, actor, stages, folders);
+		return toDetails(runs.save(run), Map.of(project.id(), project.name()));
 	}
 
 	@Override

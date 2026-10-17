@@ -39,6 +39,12 @@ public interface ProjectService {
 
 	void recordScan(UUID projectId, Instant finishedAt);
 
+	/**
+	 * For the scheduler: claims up to {@code limit} repositories whose timed schedule is due and moves their next scan
+	 * one interval ahead (so each due scan is handed out once, even with several API instances).
+	 */
+	List<DueScan> claimDueScans(int limit);
+
 	/** How Artemis reaches the repository (deploy key, host key, last access check). */
 	RepositoryAccess access(UUID organizationId, String name);
 

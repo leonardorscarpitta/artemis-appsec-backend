@@ -24,8 +24,12 @@ import jakarta.persistence.OneToMany;
 import jakarta.persistence.OrderColumn;
 import jakarta.persistence.Table;
 
+import org.hibernate.annotations.DynamicUpdate;
+
 /** A source code repository monitored by Artemis. */
+// Dynamic updates: the scheduler advances next_scan_at concurrently with other edits of the row.
 @Entity
+@DynamicUpdate
 @Table(name = "project")
 public class Project {
 
@@ -55,6 +59,9 @@ public class Project {
 	@Enumerated(EnumType.STRING)
 	@Column(name = "scan_schedule", nullable = false)
 	private ScanSchedule scanSchedule;
+
+	@Column(name = "next_scan_at")
+	private Instant nextScanAt;
 
 	@Enumerated(EnumType.STRING)
 	@Column(name = "dockerfile_mode", nullable = false)
@@ -107,7 +114,7 @@ public class Project {
 		// No stack means "detect it automatically" (placeholder until the first successful access check).
 		this.stack = stack == null ? Stack.REACT : stack;
 		this.stackSource = stack == null ? StackSource.PENDING : StackSource.MANUAL;
-		this.scanSchedule = ScanSchedule.EVERY_24_HOURS;
+		this.scanSchedule = ScanSchedule.MANUAL;
 		this.dockerfileMode = DockerfileMode.RECOMMENDED;
 		this.createdAt = Instant.now();
 		this.accessStatus = isPrivateUrl(sshUrl) ? AccessStatus.PENDING : null;
@@ -121,7 +128,10 @@ public class Project {
 		if (dockerfileMode == DockerfileMode.CUSTOM && (customDockerfile == null || customDockerfile.isBlank())) {
 			throw new IllegalArgumentException("A custom Dockerfile is required when the custom mode is selected");
 		}
-		this.scanSchedule = schedule;
+		if (schedule != scanSchedule) {
+			this.scanSchedule = schedule;
+			scheduleNextScan(Instant.now());
+		}
 		this.automaticActions.clear();
 		this.automaticActions.addAll(actions);
 		this.dockerfileMode = dockerfileMode;
@@ -246,6 +256,15 @@ public class Project {
 
 	public ScanSchedule getScanSchedule() {
 		return scanSchedule;
+	}
+
+	/** Null unless the schedule is timed; the scheduler queues a run once it has passed. */
+	public Instant getNextScanAt() {
+		return nextScanAt;
+	}
+
+	public void scheduleNextScan(Instant from) {
+		this.nextScanAt = scanSchedule.interval().map(from::plus).orElse(null);
 	}
 
 	public DockerfileMode getDockerfileMode() {

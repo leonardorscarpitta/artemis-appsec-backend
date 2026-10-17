@@ -25,6 +25,12 @@ public interface PipelineRunService {
 	/** @param folders monorepo folders to scan; null or empty scans all of the repository's folders */
 	RunDetails queueScan(UUID organizationId, String repository, String actor, List<String> folders);
 
+	/**
+	 * Queues a scheduled run (counts against the quota like a manual scan). Empty when it is skipped: the plan has no
+	 * scheduled scans, access is not verified, or a run of the repository is already queued or running.
+	 */
+	Optional<RunDetails> queueScheduledScan(UUID organizationId, String repository);
+
 	// --- Scanner runner (internal job API) ---
 
 	/** Moves the oldest queued run to running and returns it, or empty when nothing is queued. */
