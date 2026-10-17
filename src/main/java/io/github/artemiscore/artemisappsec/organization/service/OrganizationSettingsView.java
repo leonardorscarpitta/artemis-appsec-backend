@@ -14,7 +14,8 @@ import jakarta.validation.constraints.Size;
 
 /**
  * Organization settings. The same shape is used to read and to update; read-only fields
- * ({@code provider}, {@code clientSecretConfigured}, {@code updatedAt}) are ignored on update.
+ * ({@code slug}, derived from the name, {@code provider}, {@code clientSecretConfigured}, {@code updatedAt}) are ignored
+ * on update.
  * The OIDC client secret is never exposed: it is managed in the deployment's secret store.
  */
 public record OrganizationSettingsView(
@@ -26,7 +27,7 @@ public record OrganizationSettingsView(
 
 	public record General(
 			@NotBlank @Size(min = 2, max = 120) String name,
-			@NotBlank @Pattern(regexp = Slugs.PATTERN, message = "use 3 to 40 lowercase letters, numbers and hyphens") String slug,
+			String slug,
 			@NotNull @Pattern(regexp = "^(en-US|pt-BR)$") String defaultLanguage,
 			@NotBlank @Size(max = 64) String timezone) {
 	}

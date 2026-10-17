@@ -9,6 +9,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,6 +18,7 @@ import io.github.artemiscore.artemisappsec.organization.domain.Organization;
 import io.github.artemiscore.artemisappsec.organization.domain.OrganizationSettings;
 import io.github.artemiscore.artemisappsec.organization.persistence.OrganizationRepository;
 import io.github.artemiscore.artemisappsec.organization.persistence.OrganizationSettingsRepository;
+import io.github.artemiscore.artemisappsec.shared.error.ApiProblemException;
 
 @Service
 @Transactional(readOnly = true)
@@ -26,10 +28,13 @@ class OrganizationSettingsServiceImpl implements OrganizationSettingsService {
 
 	private final OrganizationSettingsRepository settings;
 	private final OrganizationRepository organizations;
+	private final PlanLookup plans;
 
-	OrganizationSettingsServiceImpl(OrganizationSettingsRepository settings, OrganizationRepository organizations) {
+	OrganizationSettingsServiceImpl(OrganizationSettingsRepository settings, OrganizationRepository organizations,
+			PlanLookup plans) {
 		this.settings = settings;
 		this.organizations = organizations;
+		this.plans = plans;
 	}
 
 	@Override
@@ -47,10 +52,18 @@ class OrganizationSettingsServiceImpl implements OrganizationSettingsService {
 		validateIssuer(auth.issuer());
 
 		Organization organization = organization(organizationId);
-		if (!organization.getSlug().equals(general.slug())) {
-			Slugs.requireAvailable(general.slug(), organizations);
+		String name = general.name().strip();
+		if (!organization.getName().equals(name)) {
+			if (!plans.canRename(organizationId)) {
+				throw new ApiProblemException(HttpStatus.FORBIDDEN, "plan-required",
+						"Renaming the organization is available on the PRO plan");
+			}
+			String slug = Slugs.fromName(name);
+			if (!organization.getSlug().equals(slug)) {
+				Slugs.requireAvailable(slug, organizations);
+			}
+			organization.rename(name, slug);
 		}
-		organization.rename(general.name().strip(), general.slug());
 
 		OrganizationSettings current = load(organizationId);
 		current.updateGeneral(general.defaultLanguage(), general.timezone());

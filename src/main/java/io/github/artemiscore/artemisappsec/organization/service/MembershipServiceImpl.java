@@ -118,8 +118,9 @@ class MembershipServiceImpl implements MembershipService {
 			throw new ApiProblemException(HttpStatus.CONFLICT, "organization-limit",
 					"You can own at most %d organizations".formatted(MAX_OWNED_ORGANIZATIONS));
 		}
-		Slugs.requireAvailable(command.slug(), organizations);
-		Organization organization = organizations.save(new Organization(command.slug(), command.name().strip()));
+		String slug = Slugs.fromName(command.name());
+		Slugs.requireAvailable(slug, organizations);
+		Organization organization = organizations.save(new Organization(slug, command.name().strip()));
 		String language = command.defaultLanguage() == null ? "en-US" : command.defaultLanguage();
 		settings.save(new OrganizationSettings(organization.getId(), language, issuer, WEB_CLIENT_ID));
 		integrations.saveAll(Integration.catalogFor(organization.getId()));

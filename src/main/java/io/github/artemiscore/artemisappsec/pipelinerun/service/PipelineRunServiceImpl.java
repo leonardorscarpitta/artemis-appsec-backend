@@ -8,6 +8,7 @@ import static io.github.artemiscore.artemisappsec.pipelinerun.persistence.Pipeli
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +30,7 @@ import io.github.artemiscore.artemisappsec.pipelinerun.domain.RunTrigger;
 import io.github.artemiscore.artemisappsec.pipelinerun.domain.StageRun;
 import io.github.artemiscore.artemisappsec.pipelinerun.domain.StageStatus;
 import io.github.artemiscore.artemisappsec.pipelinerun.persistence.PipelineRunRepository;
+import io.github.artemiscore.artemisappsec.pipelinerun.persistence.RunQuota;
 import io.github.artemiscore.artemisappsec.project.service.ProjectDetails;
 import io.github.artemiscore.artemisappsec.project.service.ProjectService;
 import io.github.artemiscore.artemisappsec.project.domain.AccessStatus;
@@ -50,10 +52,12 @@ class PipelineRunServiceImpl implements PipelineRunService {
 	private final PipelineRunRepository runs;
 	private final ProjectService projects;
 	private final BillingService billing;
+	private final RunQuota quota;
 	private final Clock clock;
 
-	PipelineRunServiceImpl(PipelineRunRepository runs, ProjectService projects, BillingService billing) {
+	PipelineRunServiceImpl(PipelineRunRepository runs, ProjectService projects, BillingService billing, RunQuota quota) {
 		this.runs = runs;
+		this.quota = quota;
 		this.projects = projects;
 		this.billing = billing;
 		this.clock = Clock.systemUTC();
@@ -108,7 +112,7 @@ class PipelineRunServiceImpl implements PipelineRunService {
 	@Transactional
 	public RunDetails rerun(UUID organizationId, long number, String actor) {
 		PipelineRun source = load(number, projectNames(organizationId));
-		billing.consumeScan(organizationId);
+		LocalDate quotaMonth = billing.consumeScan(organizationId);
 		ProjectSummary project = projects.findById(source.getProjectId())
 			.orElseThrow(() -> new ResourceNotFoundException("Repository", source.getProjectId()));
 		requireVerifiedAccess(project);
@@ -118,6 +122,7 @@ class PipelineRunServiceImpl implements PipelineRunService {
 		List<String> folders = selectFolders(project, source.getFolders().stream().filter(current::contains).toList());
 		PipelineRun run = PipelineRun.queued(runs.nextNumber(), source.getProjectId(), source.getBranch(),
 				source.getCommitSha(), source.getCommitMessage(), actor, stages, folders);
+		run.reserveQuota(quotaMonth);
 		return toDetails(runs.save(run), Map.of(project.id(), project.name()));
 	}
 
@@ -144,10 +149,11 @@ class PipelineRunServiceImpl implements PipelineRunService {
 
 	private RunDetails queue(UUID organizationId, ProjectSummary project, RunTrigger trigger, String actor,
 			List<String> folders) {
-		billing.consumeScan(organizationId);
+		LocalDate quotaMonth = billing.consumeScan(organizationId);
 		List<StageSelection> stages = enabledStages(organizationId, project.name());
 		PipelineRun run = PipelineRun.queued(runs.nextNumber(), project.id(), project.branch(), PENDING_COMMIT,
 				PENDING_MESSAGE, trigger, actor, stages, folders);
+		run.reserveQuota(quotaMonth);
 		return toDetails(runs.save(run), Map.of(project.id(), project.name()));
 	}
 
@@ -180,6 +186,7 @@ class PipelineRunServiceImpl implements PipelineRunService {
 	@Override
 	@Transactional
 	public StageStatus recordStage(UUID runId, StageResult r) {
+		quota.settle(runId);
 		StageRun stage = loadById(runId).recordStage(r.stage(), r.tool(), r.outcome(), r.durationSeconds(), r.log(),
 				r.findings(), r.highestSeverity(), r.newFindings());
 		return stage.getStatus();
@@ -191,13 +198,16 @@ class PipelineRunServiceImpl implements PipelineRunService {
 		PipelineRun run = loadById(runId);
 		Instant now = Instant.now(clock);
 		run.complete(now);
+		quota.settle(runId);
 		projects.recordScan(run.getProjectId(), now);
 	}
 
 	@Override
 	@Transactional
 	public void fail(UUID runId, String reason) {
-		loadById(runId).fail(reason, Instant.now(clock));
+		PipelineRun run = loadById(runId);
+		run.fail(reason, Instant.now(clock));
+		refundIfNotScanned(run);
 	}
 
 	@Override
@@ -205,7 +215,10 @@ class PipelineRunServiceImpl implements PipelineRunService {
 	public int failStaleRuns(Duration maxDuration) {
 		Instant now = Instant.now(clock);
 		List<PipelineRun> stale = runs.findByStatusAndStartedAtBefore(RunStatus.RUNNING, now.minus(maxDuration));
-		stale.forEach(r -> r.fail("the scanner runner did not finish within %d minutes".formatted(maxDuration.toMinutes()), now));
+		stale.forEach(r -> {
+			r.fail("the scanner runner did not finish within %d minutes".formatted(maxDuration.toMinutes()), now);
+			refundIfNotScanned(r);
+		});
 		return stale.size();
 	}
 
@@ -237,7 +250,16 @@ class PipelineRunServiceImpl implements PipelineRunService {
 		Map<UUID, String> names = projectNames(organizationId);
 		PipelineRun run = load(number, names);
 		run.cancel();
+		refundIfNotScanned(run);
 		return toDetails(run, names);
+	}
+
+	/** A run that ended before the runner reported any stage gives its monthly scan back. */
+	private void refundIfNotScanned(PipelineRun run) {
+		quota.release(run.getId()).ifPresent(month -> {
+			projects.findById(run.getProjectId()).ifPresent(p -> billing.refundScan(p.organizationId(), month));
+			run.markQuotaRefunded();
+		});
 	}
 
 	private PipelineRun load(long number, Map<UUID, String> organizationProjects) {
@@ -276,7 +298,7 @@ class PipelineRunServiceImpl implements PipelineRunService {
 	private static RunView toView(PipelineRun r, Map<UUID, String> names) {
 		return new RunView(r.getNumber(), names.getOrDefault(r.getProjectId(), "unknown"), r.getBranch(), r.getCommitSha(),
 				r.getCommitMessage(), r.getTrigger(), r.getActor(), r.getStatus(), r.getStartedAt(), r.getDurationSeconds(),
-				r.getNewFindings(), r.totalFindings(), r.failedByPolicy(), r.getFolders());
+				r.getNewFindings(), r.totalFindings(), r.failedByPolicy(), r.getFolders(), r.isQuotaRefunded());
 	}
 
 	private static RunDetails toDetails(PipelineRun r, Map<UUID, String> names) {

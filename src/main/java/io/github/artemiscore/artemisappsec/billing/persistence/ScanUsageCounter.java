@@ -32,6 +32,13 @@ public class ScanUsageCounter {
 			.update() == 1;
 	}
 
+	public void decrement(UUID organizationId, LocalDate month) {
+		jdbc.sql("UPDATE organization_scan_usage SET scans = scans - 1 WHERE organization_id = :org AND month = :month AND scans > 0")
+			.param("org", organizationId)
+			.param("month", month)
+			.update();
+	}
+
 	public long scans(UUID organizationId, LocalDate month) {
 		return jdbc.sql("SELECT scans FROM organization_scan_usage WHERE organization_id = :org AND month = :month")
 			.param("org", organizationId)

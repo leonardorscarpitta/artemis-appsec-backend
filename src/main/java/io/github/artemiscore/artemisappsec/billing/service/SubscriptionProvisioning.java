@@ -8,6 +8,7 @@ import java.util.stream.Collectors;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
+import io.github.artemiscore.artemisappsec.billing.domain.Feature;
 import io.github.artemiscore.artemisappsec.billing.domain.Subscription;
 import io.github.artemiscore.artemisappsec.billing.persistence.SubscriptionRepository;
 import io.github.artemiscore.artemisappsec.organization.service.OrganizationCreated;
@@ -32,5 +33,12 @@ class SubscriptionProvisioning implements PlanLookup {
 	public Map<UUID, String> plansOf(Collection<UUID> organizationIds) {
 		return subscriptions.findAllById(organizationIds).stream()
 			.collect(Collectors.toMap(Subscription::getOrganizationId, s -> s.getPlan().wireValue()));
+	}
+
+	@Override
+	public boolean canRename(UUID organizationId) {
+		return subscriptions.findById(organizationId)
+			.map(s -> s.getPlan().features().contains(Feature.ORGANIZATION_RENAME))
+			.orElse(false);
 	}
 }
