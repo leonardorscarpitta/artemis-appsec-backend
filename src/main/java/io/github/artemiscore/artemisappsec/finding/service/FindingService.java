@@ -1,5 +1,7 @@
 package io.github.artemiscore.artemisappsec.finding.service;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 
@@ -17,6 +19,9 @@ public interface FindingService {
 
 	/** Findings of the organization that still need attention (open or triaged). */
 	List<FindingSummary> findActive(UUID organizationId);
+
+	/** Day-by-day history from {@code from} to {@code to} (inclusive), with days in {@code zone}. */
+	FindingTrend trend(UUID organizationId, LocalDate from, LocalDate to, ZoneId zone);
 
 	/**
 	 * Records everything a completed scanner stage reported for a project: new issues are opened, known ones refreshed

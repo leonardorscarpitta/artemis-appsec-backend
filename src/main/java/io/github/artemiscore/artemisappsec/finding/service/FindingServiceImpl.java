@@ -4,10 +4,13 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -140,6 +143,46 @@ class FindingServiceImpl implements FindingService {
 		return findings.findByProjectIdInAndStatusIn(projectsById.keySet(), ACTIVE).stream()
 			.map(f -> toSummary(f, projectsById, sla))
 			.sorted(Comparator.comparing(FindingSummary::detectedAt).reversed())
+			.toList();
+	}
+
+	@Override
+	public FindingTrend trend(UUID organizationId, LocalDate from, LocalDate to, ZoneId zone) {
+		Set<UUID> projectIds = projectsById(organizationId).keySet();
+		Map<LocalDate, long[]> byDay = new TreeMap<>();
+		for (LocalDate day = from; !day.isAfter(to); day = day.plusDays(1)) {
+			byDay.put(day, new long[6]);
+		}
+		if (projectIds.isEmpty()) {
+			return new FindingTrend(toDays(byDay), null, 0);
+		}
+		Instant since = from.atStartOfDay(zone).toInstant();
+		for (Object[] row : findings.dailyOpenBySeverity(projectIds, from, to, zone.getId())) {
+			long[] counts = byDay.get(LocalDate.parse((String) row[0]));
+			if (counts != null) {
+				counts[Severity.valueOf((String) row[1]).ordinal()] = ((Number) row[2]).longValue();
+			}
+		}
+		for (Object[] row : findings.dailyDetectedAndFixed(projectIds, since, zone.getId())) {
+			long[] counts = byDay.get(LocalDate.parse((String) row[0]));
+			if (counts != null) {
+				counts[4] = ((Number) row[1]).longValue();
+				counts[5] = ((Number) row[2]).longValue();
+			}
+		}
+		Object[] remediation = findings.remediationSince(projectIds, since).getFirst();
+		long fixes = ((Number) remediation[0]).longValue();
+		Double meanDays = remediation[1] == null ? null
+				: Math.round(((Number) remediation[1]).doubleValue() / 86_400 * 10) / 10.0;
+		return new FindingTrend(toDays(byDay), meanDays, fixes);
+	}
+
+	private static List<FindingTrend.Day> toDays(Map<LocalDate, long[]> byDay) {
+		return byDay.entrySet().stream()
+			.map(e -> {
+				long[] c = e.getValue();
+				return new FindingTrend.Day(e.getKey(), c[0], c[1], c[2], c[3], c[4], c[5]);
+			})
 			.toList();
 	}
 
