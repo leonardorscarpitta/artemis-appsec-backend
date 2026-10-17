@@ -266,6 +266,15 @@ Finding payload:
 - Deduplication per repository (`fingerprint`): vulnerabilities by `(cve or ruleId, package, version)`, licenses by `(ruleId, package, version)`, everything else by `(kind, ruleId, path)`. A known finding is refreshed (and reopened if it was fixed); active findings of a completed stage that are not reported again become `fixed`, with a timeline note. Stages that error or are skipped never fix anything.
 - Severity of vulnerabilities comes from the CVSS score when present, otherwise from the tool.
 
+### Policies (enforced)
+
+Policies are stored per organization (`policy` module) and applied through two ports, so modules keep their dependency direction: `project.service.PipelinePolicy` (stage gates) and `finding.service.FindingPolicy` (SLAs, license rules), both implemented by `policy.service.PolicyRules` (repositories only).
+
+- **Stage gates:** a gate's `failOn` is the organization's **minimum** strictness and `required` forces the stage on. `PUT /repositories/{name}/pipeline` (and creation) returns `409` when a required stage is disabled or a threshold is looser than the gate; runs use `ProjectService.effectivePipeline()` (required stages enabled, thresholds raised to the gate). Unavailable stages (DAST) cannot be required (`400`).
+- **Risk acceptances:** one per finding (`risk_acceptance.finding_id`, V19; legacy CVE-only rows keep `cve`). `POST /findings/{id}/status` with `status: accepted` requires `note` (justification, ≥ 10 chars) and `expiresAt` (future, ≤ 1 year) and publishes `RiskAccepted` → the policy module records the acceptance; leaving `accepted` publishes `RiskAcceptanceEnded` → it is removed. `POST /risk-acceptances` `{finding: "F-1101" | "CVE-…", repository, justification, expiresAt}` accepts the matching open finding(s) and returns the created acceptances (list); `DELETE /risk-acceptances/{id}` reopens the finding. An hourly job reopens findings whose acceptance expired (timeline note). Accepted and false-positive findings are still recorded but never fail a stage.
+- **Remediation SLAs:** findings expose `dueAt` (first detection + SLA days for the severity) and `overdue` (open/triaged past `dueAt`); the dashboard summary has `overdueFindings`.
+- **License rules:** license findings (`ruleId` `license:<SPDX>`) are matched case-insensitively: allowed → not recorded, denied → `high`, no rule → `medium`. Only licenses Trivy classifies as forbidden/restricted/reciprocal reach the API, so a deny rule on a permissive license has no effect.
+
 ### Findings JSON
 
 `GET /api/v1/findings` items (also `finding` in the detail and `recent` in the dashboard summary):
