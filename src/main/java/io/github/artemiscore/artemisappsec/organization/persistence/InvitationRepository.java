@@ -18,4 +18,6 @@ public interface InvitationRepository extends JpaRepository<Invitation, UUID> {
 	Optional<Invitation> findByOrganizationIdAndEmail(UUID organizationId, String email);
 
 	List<Invitation> findByEmailAndExpiresAtAfterOrderBySentAtDesc(String email, Instant now);
+
+	Optional<Invitation> findByTokenHash(String tokenHash);
 }

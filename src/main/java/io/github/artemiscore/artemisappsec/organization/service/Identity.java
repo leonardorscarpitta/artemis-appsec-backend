@@ -10,12 +10,11 @@ public record Identity(String subject, String username, String name, String emai
 	}
 
 	/**
-	 * The e-mail memberships and invitations match on. E-mail verification is off in the realm, so this trusts the
-	 * address as registered (Keycloak keeps it unique per account); return it only when {@code emailVerified} to
-	 * require verification again.
+	 * The e-mail memberships and invitations may match on: only a verified one. E-mail verification is off in the
+	 * realm, so new accounts join through one-time invitation links instead.
 	 */
 	public String matchingEmail() {
-		return email;
+		return emailVerified ? email : null;
 	}
 
 	public String displayName() {

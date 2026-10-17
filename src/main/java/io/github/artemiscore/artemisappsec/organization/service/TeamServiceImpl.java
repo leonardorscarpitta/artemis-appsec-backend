@@ -159,6 +159,6 @@ class TeamServiceImpl implements TeamService {
 
 	private static InvitationView toView(Invitation i, Instant now) {
 		return new InvitationView(i.getId(), i.getEmail(), i.getRole(), i.getInvitedBy(), i.getSentAt(), i.getExpiresAt(),
-				i.isExpired(now));
+				i.isExpired(now), i.getIssuedToken());
 	}
 }
