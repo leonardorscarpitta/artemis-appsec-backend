@@ -7,6 +7,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -109,16 +110,41 @@ class FindingServiceImpl implements FindingService {
 		if (accepting) {
 			requireAcceptance(note, command.expiresAt());
 		}
+		apply(organizationId, finding, command.status(), note, command.expiresAt(), actor);
+		return toDetails(finding, projectsById, policy.remediationDays(organizationId));
+	}
+
+	@Override
+	@Transactional
+	public BulkStatusResult changeStatuses(UUID organizationId, BulkStatusCommand command, String actor) {
+		String note = command.note() == null || command.note().isBlank() ? null : command.note().trim();
+		if (command.status() == FindingStatus.ACCEPTED) {
+			requireAcceptance(note, command.expiresAt());
+		}
+		Map<UUID, ProjectSummary> projectsById = projectsById(organizationId);
+		Set<UUID> ids = new LinkedHashSet<>(command.ids());
+		int updated = 0;
+		for (UUID id : ids) {
+			Finding finding = load(id, projectsById);
+			if (finding.getStatus() != command.status() && finding.getStatus().canTransitionTo(command.status())) {
+				apply(organizationId, finding, command.status(), note, command.expiresAt(), actor);
+				updated++;
+			}
+		}
+		return new BulkStatusResult(updated, ids.size() - updated);
+	}
+
+	private void apply(UUID organizationId, Finding finding, FindingStatus target, String note, LocalDate expiresAt,
+			String actor) {
 		boolean wasAccepted = finding.getStatus() == FindingStatus.ACCEPTED;
-		finding.changeStatus(command.status(), note, Instant.now(clock));
+		finding.changeStatus(target, note, Instant.now(clock));
 		if (wasAccepted) {
 			events.publishEvent(new RiskAcceptanceEnded(finding.getId()));
 		}
-		if (accepting) {
+		if (target == FindingStatus.ACCEPTED) {
 			events.publishEvent(new RiskAccepted(organizationId, finding.getId(), finding.getProjectId(), finding.getCve(),
-					note, command.expiresAt(), actor));
+					note, expiresAt, actor));
 		}
-		return toDetails(finding, projectsById, policy.remediationDays(organizationId));
 	}
 
 	private void requireAcceptance(String justification, LocalDate expiresAt) {
