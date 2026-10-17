@@ -135,7 +135,7 @@ class PolicyServiceImpl implements PolicyService {
 	public List<RiskAcceptanceView> acceptRisk(UUID organizationId, AcceptRiskCommand command, String approvedBy) {
 		projectId(organizationId, command.repository());
 		String wanted = command.finding().strip();
-		List<FindingSummary> matches = findings.search(organizationId, new FindingQuery(wanted, null, null, null,
+		List<FindingSummary> matches = findings.search(organizationId, new FindingQuery(null, null, null, null,
 				command.repository(), FindingQuery.SortField.DETECTED, false)).stream()
 			.filter(f -> wanted.equalsIgnoreCase(f.reference()) || wanted.equalsIgnoreCase(f.cve()))
 			.filter(f -> f.status().isActive())
