@@ -73,6 +73,9 @@ services:
       - --hostname-backchannel-dynamic=true
       - --proxy-headers=xforwarded
       - --health-enabled=true
+      # Dev only: reload the Artemis theme on every request while editing it.
+      - --spi-theme--cache-themes=false
+      - --spi-theme--cache-templates=false
     environment:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://db:5432/keycloak
@@ -88,6 +91,7 @@ services:
       KC_SMTP_FROM: ${KC_SMTP_FROM:-no-reply@artemisappsec.localhost}
     volumes:
       - ./keycloak/realm-artemisappsec.json:/opt/keycloak/data/import/realm-artemisappsec.json:ro
+      - ./keycloak/themes/artemis:/opt/keycloak/themes/artemis:ro
     mem_limit: 768m
     depends_on:
       keycloak-db-init:
