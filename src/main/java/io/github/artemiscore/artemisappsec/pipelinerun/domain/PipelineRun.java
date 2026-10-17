@@ -144,9 +144,12 @@ public class PipelineRun {
 
 	public void complete(Instant now) {
 		requireStatus(RunStatus.RUNNING, "complete");
-		stages.forEach(s -> s.skip("Skipped: the runner did not report this stage."));
+		// Unavailable stages were skipped when the run started; anything still pending was never reported, so the
+		// run cannot count as a pass (e.g. the runner crashed or was cut short).
+		boolean incomplete = stages.stream().anyMatch(s -> s.getStatus() == StageStatus.PENDING || s.getStatus() == StageStatus.RUNNING);
+		stages.forEach(s -> s.skip("Skipped: the runner did not report this stage (incomplete run)."));
 		boolean failed = stages.stream().anyMatch(s -> s.getStatus() == StageStatus.FAILED);
-		status = failed ? RunStatus.FAILED : RunStatus.SUCCESS;
+		status = failed || incomplete ? RunStatus.FAILED : RunStatus.SUCCESS;
 		durationSeconds = elapsedSince(now);
 	}
 
