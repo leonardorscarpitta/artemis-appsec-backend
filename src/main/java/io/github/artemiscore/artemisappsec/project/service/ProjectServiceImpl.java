@@ -75,7 +75,7 @@ class ProjectServiceImpl implements ProjectService {
 		// Every repository is cloned over SSH with its own deploy key, which also proves the user controls it.
 		GitHost host = Project.isPrivateUrl(command.url()) ? GitHost.of(command.url()).orElse(null) : null;
 		if (host == null) {
-			throw new IllegalArgumentException("Use an SSH URL such as git@github.com:owner/repo.git or ssh://git@host/owner/repo.git");
+			throw new IllegalArgumentException("Use an SSH URL such as git@git.example.com:owner/repo.git or ssh://git@host/owner/repo.git");
 		}
 		if (host.disallowed()) {
 			throw new IllegalArgumentException("The repository host must be a public Git server name, such as github.com");
