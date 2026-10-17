@@ -3,6 +3,7 @@ import argparse
 import json
 import logging
 import random
+import shutil
 import signal
 import sys
 import tempfile
@@ -13,6 +14,7 @@ from .api import ApiClient, ApiError
 from .clone import CloneRefused, clone
 from .config import Config
 from .job import process, process_access_check, wipe, wipe_workspace
+from .proc import harden, reap_orphans
 from .scan import run_stage
 
 log = logging.getLogger("artemis.runner")
@@ -45,6 +47,7 @@ def main() -> int:
 
 
 def run_loop() -> int:
+    harden()
     config = Config.from_env()
     api = ApiClient(config)
     stopping = False
@@ -61,6 +64,7 @@ def run_loop() -> int:
     log.info("runner started; polling %s", config.api_url)
 
     while not stopping:
+        reap_orphans()
         config.heartbeat_file.touch()
         try:
             job = api.claim()
@@ -126,8 +130,10 @@ def local_scan(args) -> int:
             src = work / "src"
             output["source"] = {"url": args.url, "commitSha": sha, "commitMessage": subject}
         else:
-            src = args.dir.resolve()
-            output["source"] = {"dir": str(src)}
+            # Scanned as a copy: some stages neutralize repository files (e.g. Gitleaks config, remote Terraform modules).
+            src = work / "src"
+            shutil.copytree(args.dir.resolve(), src, symlinks=True)
+            output["source"] = {"dir": str(args.dir.resolve())}
         for stage in stages:
             result = run_stage(stage, tools.get(stage, ""), src, work)
             output["stages"].append({"id": stage, **result})

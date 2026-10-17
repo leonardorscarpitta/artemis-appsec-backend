@@ -1,5 +1,6 @@
 """Trivy: dependency vulnerabilities, licenses and misconfigurations (IaC and Dockerfiles)."""
 import ipaddress
+import re
 import socket
 from pathlib import Path
 
@@ -43,7 +44,7 @@ def image(reference: str, out: Path, timeout: int) -> ToolResult:
     report = out / "trivy-image.json"
     # Layers are unpacked under `out` (the in-memory workspace), never in the read-only image or /tmp.
     run(["trivy", "image", "--image-src", "remote", "--scanners", "vuln", "--max-image-size", MAX_IMAGE_SIZE,
-         *COMMON, *FS_ONLY, "--output", str(report), reference], timeout, out, env={"TMPDIR": str(out)})
+         *COMMON, *FS_ONLY, "--output", str(report), "--", reference], timeout, out, env={"TMPDIR": str(out)})
     findings = _vulnerability_findings(report)
     return ToolResult(findings, summary("Trivy", findings))
 
@@ -104,9 +105,39 @@ def licenses(src: Path, out: Path, timeout: int) -> ToolResult:
     return ToolResult(findings, summary("Trivy", findings))
 
 
+# Terraform only treats sources starting with ./ or ../ as local; anything else (git::, URLs, registry, GitHub
+# shorthand, …) is downloaded.
+_REMOTE_SOURCE = re.compile(r'(?P<head>"?source"?\s*[=:]\s*")(?P<value>(?!\.\.?/)[^"\n]+)(?P<tail>")')
+
+
+def disable_remote_modules(src: Path) -> int:
+    """Points remote Terraform module sources at a missing local path in the scanned copy.
+
+    Trivy downloads remote modules (git, HTTP, S3, registry) while evaluating Terraform and ignores --offline-scan
+    and proxy settings for it, so a repository could make the runner request internal URLs. Findings in downloaded
+    modules are excluded anyway, so nothing is lost.
+    """
+    changed = 0
+    for path in [*src.rglob("*.tf"), *src.rglob("*.tf.json")]:
+        if path.is_symlink() or not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        rewritten, count = _REMOTE_SOURCE.subn(r"\g<head>./.artemis-remote-module-not-fetched\g<tail>", text)
+        if count:
+            path.write_text(rewritten, encoding="utf-8")
+            changed += count
+    return changed
+
+
 def _misconfig(src: Path, out: Path, timeout: int, scanners: str, name: str) -> ToolResult:
     report = out / f"trivy-{name}.json"
-    run(["trivy", "config", "--misconfig-scanners", scanners, *COMMON, "--output", str(report), str(src)], timeout, out)
+    if "terraform" in scanners:
+        disable_remote_modules(src)
+    run(["trivy", "config", "--misconfig-scanners", scanners, "--skip-check-update", "--tf-exclude-downloaded-modules",
+         *COMMON, "--output", str(report), str(src)], timeout, out)
     findings = []
     for result in (read_json(report, {}) or {}).get("Results") or []:
         for item in result.get("Misconfigurations") or []:

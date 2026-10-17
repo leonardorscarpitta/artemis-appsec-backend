@@ -1,6 +1,7 @@
 """Processes one claimed job end to end."""
 import logging
 import shutil
+import time
 from pathlib import Path
 
 from .api import ApiClient
@@ -18,6 +19,9 @@ def process(job: dict, api: ApiClient, config: Config) -> None:
     repo = job["repository"]
     limits = job.get("limits") or {}
     timeout = int(limits.get("stageTimeoutSeconds", 600))
+    # One wall-clock budget for the whole run, so many folders x long stages cannot hold the runner for hours.
+    deadline = time.monotonic() + config.run_timeout
+    out_of_time = f"Not run: the run time limit ({config.run_timeout // 60} min) was reached."
     work = config.workspace / f"run-{job.get('number', 'x')}"
     wipe(work)
     work.mkdir(parents=True)
@@ -52,24 +56,39 @@ def process(job: dict, api: ApiClient, config: Config) -> None:
                 return
             targets.append((folder, target))
 
+        def budget() -> int:
+            return min(timeout, int(deadline - time.monotonic()))
+
+        def run_part(stage: dict, target: Path, **extra) -> dict:
+            if budget() <= 0:
+                return skipped(stage, out_of_time)
+            return run_stage(stage["id"], stage.get("tool", ""), target, work, max(1, budget()), **extra)
+
         failed_stage = None
+        timed_out = False
         for stage in job.get("stages", []):
             if failed_stage:
-                api.stage(run_id, stage["id"], not_run(stage, failed_stage))
+                api.stage(run_id, stage["id"], skipped(stage, f"Not run: the {failed_stage} stage failed, so the pipeline stopped."))
+                continue
+            if budget() <= 0:
+                timed_out = True
+                api.stage(run_id, stage["id"], skipped(stage, out_of_time))
                 continue
             if stage["id"] == "image":
-                result = run_stage(stage["id"], stage.get("tool", ""), src, work, timeout, image=repo.get("image"))
+                result = run_part(stage, src, image=repo.get("image"))
             elif targets:
-                result = merge([(folder, run_stage(stage["id"], stage.get("tool", ""), target, work, timeout))
-                                for folder, target in targets])
+                result = merge([(folder, run_part(stage, target)) for folder, target in targets])
             else:
-                result = run_stage(stage["id"], stage.get("tool", ""), src, work, timeout)
+                result = run_part(stage, src)
             status = api.stage(run_id, stage["id"], result).get("status", result["status"])
             log.info("run %s: %s/%s -> %s (%d finding(s))", job.get("number"), stage["id"], result["tool"],
                      status, len(result["findings"]))
             if status in ("failed", "error"):
                 failed_stage = stage["id"]
-        api.complete(run_id)
+        if timed_out or budget() <= 0:
+            api.fail(run_id, f"The run time limit ({config.run_timeout // 60} min) was reached; the remaining stages were not run.")
+        else:
+            api.complete(run_id)
     finally:
         # Source code never outlives the run.
         wipe(work)
@@ -134,10 +153,9 @@ def merge(parts: list[tuple[str, dict]]) -> dict:
     }
 
 
-def not_run(stage: dict, failed_stage: str) -> dict:
-    """A failed stage stops the pipeline: the stages after it are reported as skipped, never run."""
-    return {"status": "skipped", "tool": stage.get("tool", ""), "durationSeconds": 0,
-            "log": f"Not run: the {failed_stage} stage failed, so the pipeline stopped.", "findings": []}
+def skipped(stage: dict, reason: str) -> dict:
+    """A stage that is reported without running (a previous stage failed, or the run is out of time)."""
+    return {"status": "skipped", "tool": stage.get("tool", ""), "durationSeconds": 0, "log": reason, "findings": []}
 
 
 def wipe(path: Path) -> None:
