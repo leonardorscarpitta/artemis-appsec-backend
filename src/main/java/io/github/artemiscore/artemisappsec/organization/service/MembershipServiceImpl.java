@@ -123,6 +123,8 @@ class MembershipServiceImpl implements MembershipService {
 		String language = command.defaultLanguage() == null ? "en-US" : command.defaultLanguage();
 		settings.save(new OrganizationSettings(organization.getId(), language, issuer, WEB_CLIENT_ID));
 		integrations.saveAll(Integration.catalogFor(organization.getId()));
+		// The permission matrix is written with plain SQL, so the organization row must be in the database first.
+		organizations.flush();
 		rolePermissions.provisionDefaults(organization.getId());
 		members.save(new Member(organization.getId(), identity.subject(), identity.displayName(), identity.email(), Role.OWNER));
 		events.publishEvent(new OrganizationCreated(organization.getId()));
