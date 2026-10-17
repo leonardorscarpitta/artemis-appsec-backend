@@ -125,6 +125,7 @@ All environment-specific values come from environment variables (secrets in prod
 | `KEYCLOAK_ADMIN_USERNAME`, `KEYCLOAK_ADMIN_PASSWORD`, `KEYCLOAK_DB_PASSWORD` | Keycloak bootstrap admin and database credentials |
 | `KC_SMTP_HOST`, `KC_SMTP_PORT`, `KC_SMTP_FROM` | Outgoing e-mail for password reset (Mailpit by default) |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated origins allowed to call `/api/**` |
+| `SERVER_TOMCAT_REMOTEIP_INTERNAL_PROXIES` | Optional regex of the reverse proxies whose `X-Forwarded-*` headers are trusted (`forward-headers-strategy: native`; default: Tomcat's loopback and private ranges). Clients connecting directly cannot spoof forwarded headers |
 | `SCANNER_TOKEN` | Shared secret of the scanner runner (≥ 32 random characters; the internal job API is disabled otherwise). Also `SCANNER_STAGE_TIMEOUT_SECONDS` (600), `SCANNER_MAX_REPO_SIZE_MB` (500), `SCANNER_STALE_RUN_MINUTES` (60) |
 | `SCANNER_RUN_TIMEOUT_SECONDS` | Wall-clock limit for one whole scan run in the runner (default 3600) |
 | `DEPLOY_KEY_ENCRYPTION_KEY`, `DEPLOY_KEY_ENCRYPTION_KEY_ID` | Master key (base64 of 32 random bytes, `openssl rand -base64 32`) and its label (`v1`) for encrypting the private deploy keys of private repositories. Without a valid key, private repositories are disabled (`503 deploy-keys-disabled`) |
