@@ -29,6 +29,7 @@ import io.github.artemiscore.artemisappsec.pipelinerun.domain.StageStatus;
 import io.github.artemiscore.artemisappsec.pipelinerun.persistence.PipelineRunRepository;
 import io.github.artemiscore.artemisappsec.project.service.ProjectDetails;
 import io.github.artemiscore.artemisappsec.project.service.ProjectService;
+import io.github.artemiscore.artemisappsec.project.domain.AccessStatus;
 import io.github.artemiscore.artemisappsec.project.service.ProjectSummary;
 import io.github.artemiscore.artemisappsec.shared.error.BusinessRuleException;
 import io.github.artemiscore.artemisappsec.shared.error.ResourceNotFoundException;
@@ -103,23 +104,29 @@ class PipelineRunServiceImpl implements PipelineRunService {
 	@Transactional
 	public RunDetails rerun(UUID organizationId, long number, String actor) {
 		PipelineRun source = load(number, projectNames(organizationId));
-		billing.assertCanScan(organizationId);
+		billing.consumeScan(organizationId);
 		ProjectSummary project = projects.findById(source.getProjectId())
 			.orElseThrow(() -> new ResourceNotFoundException("Repository", source.getProjectId()));
+		requireVerifiedAccess(project);
 		List<StageSelection> stages = enabledStages(organizationId, project.name());
+		// Folders removed from the repository since then are dropped; none left means all of them.
+		List<String> current = project.folders().stream().map(f -> f.path()).toList();
+		List<String> folders = selectFolders(project, source.getFolders().stream().filter(current::contains).toList());
 		PipelineRun run = PipelineRun.queued(runs.nextNumber(), source.getProjectId(), source.getBranch(),
-				source.getCommitSha(), source.getCommitMessage(), actor, stages);
+				source.getCommitSha(), source.getCommitMessage(), actor, stages, folders);
 		return toDetails(runs.save(run), Map.of(project.id(), project.name()));
 	}
 
 	@Override
 	@Transactional
-	public RunDetails queueScan(UUID organizationId, String repository, String actor) {
+	public RunDetails queueScan(UUID organizationId, String repository, String actor, List<String> folders) {
 		ProjectDetails project = projects.getByName(organizationId, repository);
-		billing.assertCanScan(organizationId);
+		requireVerifiedAccess(project.project());
+		List<String> selected = selectFolders(project.project(), folders);
+		billing.consumeScan(organizationId);
 		List<StageSelection> stages = enabledStages(organizationId, repository);
 		PipelineRun run = PipelineRun.queued(runs.nextNumber(), project.project().id(), project.project().branch(),
-				PENDING_COMMIT, PENDING_MESSAGE, actor, stages);
+				PENDING_COMMIT, PENDING_MESSAGE, actor, stages, selected);
 		return toDetails(runs.save(run), Map.of(project.project().id(), repository));
 	}
 
@@ -133,7 +140,8 @@ class PipelineRunServiceImpl implements PipelineRunService {
 		PipelineRun run = loadById(next.get());
 		run.start(Instant.now(clock));
 		List<StageAssignment> pending = pendingStages(run);
-		return Optional.of(new ClaimedRun(run.getId(), run.getNumber(), run.getProjectId(), run.getBranch(), pending));
+		return Optional.of(new ClaimedRun(run.getId(), run.getNumber(), run.getProjectId(), run.getBranch(), pending,
+				run.getFolders()));
 	}
 
 	@Override
@@ -181,7 +189,7 @@ class PipelineRunServiceImpl implements PipelineRunService {
 	}
 
 	private List<StageSelection> enabledStages(UUID organizationId, String repository) {
-		List<StageSelection> stages = projects.getByName(organizationId, repository).pipeline().stream()
+		List<StageSelection> stages = projects.effectivePipeline(organizationId, repository).stream()
 			.filter(s -> s.enabled())
 			.map(s -> new StageSelection(s.id(), s.tool(), s.failOn()))
 			.toList();
@@ -217,6 +225,29 @@ class PipelineRunServiceImpl implements PipelineRunService {
 			.orElseThrow(() -> new ResourceNotFoundException("Pipeline run", number));
 	}
 
+	/** Scans need a working deploy key: refusing early keeps the run (and the monthly quota) for when access works. */
+	private static void requireVerifiedAccess(ProjectSummary project) {
+		if (project.accessStatus() != AccessStatus.VERIFIED) {
+			throw new BusinessRuleException("Set up access first: add the deploy key from the repository's Deploy Key tab and select 'Test access'");
+		}
+	}
+
+	/**
+	 * The monorepo folders a run scans, in the repository's order: the requested ones (each must be one of the
+	 * repository's folders, else 400) or, when none are requested, all of them. Empty for non-monorepos.
+	 */
+	private static List<String> selectFolders(ProjectSummary project, List<String> requested) {
+		List<String> all = project.folders().stream().map(f -> f.path()).toList();
+		if (requested == null || requested.isEmpty()) {
+			return all;
+		}
+		List<String> unknown = requested.stream().filter(f -> !all.contains(f)).toList();
+		if (!unknown.isEmpty()) {
+			throw new IllegalArgumentException("Unknown monorepo folder(s): " + String.join(", ", unknown));
+		}
+		return all.stream().filter(requested::contains).toList();
+	}
+
 	private Map<UUID, String> projectNames(UUID organizationId) {
 		return projects.findAll(organizationId).stream().collect(Collectors.toMap(ProjectSummary::id, ProjectSummary::name));
 	}
@@ -224,7 +255,7 @@ class PipelineRunServiceImpl implements PipelineRunService {
 	private static RunView toView(PipelineRun r, Map<UUID, String> names) {
 		return new RunView(r.getNumber(), names.getOrDefault(r.getProjectId(), "unknown"), r.getBranch(), r.getCommitSha(),
 				r.getCommitMessage(), r.getTrigger(), r.getActor(), r.getStatus(), r.getStartedAt(), r.getDurationSeconds(),
-				r.getNewFindings(), r.totalFindings(), r.failedByPolicy());
+				r.getNewFindings(), r.totalFindings(), r.failedByPolicy(), r.getFolders());
 	}
 
 	private static RunDetails toDetails(PipelineRun r, Map<UUID, String> names) {

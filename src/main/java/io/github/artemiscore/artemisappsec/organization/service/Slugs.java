@@ -12,7 +12,7 @@ public final class Slugs {
 
 	public static final String PATTERN = "^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$";
 
-	private static final Set<String> RESERVED = Set.of("organizations", "auth", "login", "logout", "register", "help",
+	private static final Set<String> RESERVED = Set.of("organizations", "invite", "auth", "login", "logout", "register", "help",
 			"docs", "privacy", "terms", "licenses", "api", "internal", "admin", "settings", "account", "app", "www",
 			"static", "assets");
 

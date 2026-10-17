@@ -10,9 +10,9 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public record CreateProjectCommand(
-		@NotBlank @Size(max = 512) @Pattern(regexp = "^(git@[\\w.-]+:[\\w./-]+\\.git|ssh://[\\w.@:/-]+|https://[A-Za-z0-9.-]+(:\\d{1,5})?/[\\w.-]+(/[\\w.-]+)*?(\\.git)?)$", message = "must be an HTTPS or SSH repository URL") String url,
+		@NotBlank @Size(max = 512) @Pattern(regexp = "^(git@[\\w.-]+:[\\w./-]+\\.git|ssh://[\\w.@:/-]+)$", message = "must be an SSH repository URL such as git@git.example.com:owner/repo.git (Artemis only scans repositories through a deploy key)") String url,
 		@NotBlank @Pattern(regexp = "^[\\w./-]{1,255}$") String branch,
-		@NotNull Stack stack,
+		Stack stack,
 		@NotNull @Valid ProjectSettings settings,
 		@NotNull List<@Valid StageUpdate> pipeline) {
 }

@@ -19,7 +19,9 @@ spring:
 server:
   error:
     include-stacktrace: never
-  forward-headers-strategy: framework
+  # X-Forwarded-* is honoured only from trusted proxies (Tomcat's default: loopback and private ranges); override
+  # with SERVER_TOMCAT_REMOTEIP_INTERNAL_PROXIES (a regex) to match the production reverse proxy exactly.
+  forward-headers-strategy: native
 
 management:
   endpoints:
@@ -53,3 +55,6 @@ artemisappsec:
     stage-timeout-seconds: ${SCANNER_STAGE_TIMEOUT_SECONDS:600}
     max-repo-size-mb: ${SCANNER_MAX_REPO_SIZE_MB:500}
     stale-run-minutes: ${SCANNER_STALE_RUN_MINUTES:60}
+  deploy-keys:
+    encryption-key: ${DEPLOY_KEY_ENCRYPTION_KEY:}
+    encryption-key-id: ${DEPLOY_KEY_ENCRYPTION_KEY_ID:v1}

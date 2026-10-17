@@ -62,3 +62,83 @@ rules:
     pattern-either:
       - pattern: hashlib.md5(...)
       - pattern: hashlib.sha1(...)
+
+  # --- Flask / Django / FastAPI ---
+  - id: flask-debug-enabled
+    languages: [python]
+    severity: ERROR
+    message: Flask runs with debug=True. The Werkzeug debugger lets anyone who reaches it execute code on the server. Turn debug off outside local development.
+    metadata: { title: Flask debug mode enabled, cwe: "CWE-489: Active Debug Code", artemis-severity: high }
+    pattern-either:
+      - pattern: $APP.run(..., debug=True, ...)
+      - pattern: $APP.debug = True
+
+  - id: flask-render-template-string
+    languages: [python]
+    severity: ERROR
+    message: render_template_string with a dynamic template allows server-side template injection. Render a template file and pass data as variables.
+    metadata: { title: Server-side template injection, cwe: "CWE-1336: Improper Neutralization of Special Elements Used in a Template Engine", artemis-severity: high }
+    patterns:
+      - pattern-either:
+          - pattern: flask.render_template_string($T, ...)
+          - pattern: render_template_string($T, ...)
+      - pattern-not: flask.render_template_string("...", ...)
+      - pattern-not: render_template_string("...", ...)
+
+  - id: python-hardcoded-secret-key
+    languages: [python]
+    severity: WARNING
+    message: The framework secret key is hard-coded. Anyone with the code can forge sessions and signed data. Load it from an environment variable or secret store.
+    metadata: { title: Hard-coded secret key, cwe: "CWE-798: Use of Hard-coded Credentials", artemis-severity: high }
+    pattern-either:
+      - pattern: SECRET_KEY = "..."
+      - pattern: $APP.secret_key = "..."
+      - pattern: $APP.config["SECRET_KEY"] = "..."
+
+  - id: django-debug-true
+    languages: [python]
+    severity: WARNING
+    message: DEBUG = True in Django settings exposes stack traces, settings and SQL to visitors. Read it from the environment and keep it False in production.
+    metadata: { title: Django debug mode enabled, cwe: "CWE-489: Active Debug Code", artemis-severity: medium }
+    paths:
+      include: ["*settings*.py"]
+    pattern: DEBUG = True
+
+  - id: django-allowed-hosts-wildcard
+    languages: [python]
+    severity: WARNING
+    message: ALLOWED_HOSTS accepts any host, which enables Host header attacks (cache poisoning, password-reset link hijacking). List the real domain names.
+    metadata: { title: Django accepts any Host header, cwe: "CWE-183: Permissive List of Allowed Inputs", artemis-severity: medium }
+    paths:
+      include: ["*settings*.py"]
+    pattern: ALLOWED_HOSTS = [..., "*", ...]
+
+  - id: django-mark-safe-dynamic
+    languages: [python]
+    severity: WARNING
+    message: mark_safe on dynamic content disables Django's auto-escaping and allows cross-site scripting. Escape the data or use format_html.
+    metadata: { title: Cross-site scripting via mark_safe, cwe: "CWE-79: Cross-site Scripting", artemis-severity: medium }
+    patterns:
+      - pattern-either:
+          - pattern: django.utils.safestring.mark_safe($X)
+          - pattern: mark_safe($X)
+      - pattern-not: mark_safe("...")
+
+  - id: django-raw-sql-formatting
+    languages: [python]
+    severity: ERROR
+    message: Raw SQL built with string formatting allows SQL injection. Pass parameters separately (params=[...]) or use the ORM.
+    metadata: { title: SQL injection in Django raw query, cwe: "CWE-89: SQL Injection", artemis-severity: critical }
+    pattern-either:
+      - pattern: $M.objects.raw(f"...", ...)
+      - pattern: $M.objects.raw("..." % $X, ...)
+      - pattern: $M.objects.raw("...".format(...), ...)
+      - pattern: $M.objects.raw("..." + $X, ...)
+      - pattern: $Q.extra(where=[..., f"...", ...])
+
+  - id: fastapi-cors-wildcard-credentials
+    languages: [python]
+    severity: ERROR
+    message: CORS allows any origin together with credentials, so any website can make authenticated requests to this API. List the allowed origins explicitly.
+    metadata: { title: Permissive CORS with credentials, cwe: "CWE-942: Permissive Cross-domain Policy with Untrusted Domains", artemis-severity: high }
+    pattern: $APP.add_middleware(CORSMiddleware, ..., allow_origins=["*"], ..., allow_credentials=True, ...)

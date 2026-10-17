@@ -3,6 +3,7 @@ package io.github.artemiscore.artemisappsec.organization.service;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -21,12 +22,14 @@ import io.github.artemiscore.artemisappsec.organization.domain.Invitation;
 import io.github.artemiscore.artemisappsec.organization.domain.Member;
 import io.github.artemiscore.artemisappsec.organization.domain.Organization;
 import io.github.artemiscore.artemisappsec.organization.domain.OrganizationSettings;
+import io.github.artemiscore.artemisappsec.organization.domain.Permission;
 import io.github.artemiscore.artemisappsec.organization.domain.Role;
 import io.github.artemiscore.artemisappsec.organization.persistence.IntegrationRepository;
 import io.github.artemiscore.artemisappsec.organization.persistence.InvitationRepository;
 import io.github.artemiscore.artemisappsec.organization.persistence.MemberRepository;
 import io.github.artemiscore.artemisappsec.organization.persistence.OrganizationRepository;
 import io.github.artemiscore.artemisappsec.organization.persistence.OrganizationSettingsRepository;
+import io.github.artemiscore.artemisappsec.organization.persistence.RolePermissionStore;
 import io.github.artemiscore.artemisappsec.shared.config.ArtemisAppSecProperties;
 import io.github.artemiscore.artemisappsec.shared.error.ApiProblemException;
 
@@ -43,18 +46,20 @@ class MembershipServiceImpl implements MembershipService {
 	private final OrganizationSettingsRepository settings;
 	private final IntegrationRepository integrations;
 	private final PlanLookup plans;
+	private final RolePermissionStore rolePermissions;
 	private final ApplicationEventPublisher events;
 	private final String issuer;
 
 	MembershipServiceImpl(OrganizationRepository organizations, MemberRepository members, InvitationRepository invitations,
 			OrganizationSettingsRepository settings, IntegrationRepository integrations, PlanLookup plans,
-			ApplicationEventPublisher events, ArtemisAppSecProperties properties) {
+			RolePermissionStore rolePermissions, ApplicationEventPublisher events, ArtemisAppSecProperties properties) {
 		this.organizations = organizations;
 		this.members = members;
 		this.invitations = invitations;
 		this.settings = settings;
 		this.integrations = integrations;
 		this.plans = plans;
+		this.rolePermissions = rolePermissions;
 		this.events = events;
 		this.issuer = properties.security().oidc().issuerUri();
 	}
@@ -66,19 +71,21 @@ class MembershipServiceImpl implements MembershipService {
 			.filter(Member::isActive)
 			.orElseThrow(MembershipServiceImpl::organizationNotFound);
 		member.seen(Instant.now());
-		return new Tenant(organization.getId(), organization.getSlug(), member.getId(), member.getRole(), identity.username());
+		return new Tenant(organization.getId(), organization.getSlug(), member.getId(), member.getRole(), identity.username(),
+				rolePermissions.permissionsOf(organization.getId(), member.getRole()));
 	}
 
 	@Override
 	@Transactional(readOnly = true)
 	public Tenant resolveUnauthenticated(String slug) {
 		Organization organization = organizations.findBySlug(slug).orElseThrow(MembershipServiceImpl::organizationNotFound);
-		return new Tenant(organization.getId(), organization.getSlug(), null, Role.OWNER, "local-developer");
+		return new Tenant(organization.getId(), organization.getSlug(), null, Role.OWNER, "local-developer",
+				EnumSet.allOf(Permission.class));
 	}
 
 	@Override
 	public List<OrganizationMembership> organizationsOf(Identity identity) {
-		List<Member> found = members.findForAccount(identity.subject(), identity.verifiedEmail());
+		List<Member> found = members.findForAccount(identity.subject(), identity.matchingEmail());
 		Set<UUID> linked = found.stream()
 			.filter(m -> identity.subject().equals(m.getUserSubject()))
 			.map(Member::getOrganizationId)
@@ -107,10 +114,6 @@ class MembershipServiceImpl implements MembershipService {
 
 	@Override
 	public OrganizationMembership create(CreateOrganizationCommand command, Identity identity) {
-		if (!identity.emailVerified()) {
-			throw new ApiProblemException(HttpStatus.FORBIDDEN, "email-not-verified",
-					"Verify your e-mail address before creating an organization");
-		}
 		if (members.countByUserSubjectAndRole(identity.subject(), Role.OWNER) >= MAX_OWNED_ORGANIZATIONS) {
 			throw new ApiProblemException(HttpStatus.CONFLICT, "organization-limit",
 					"You can own at most %d organizations".formatted(MAX_OWNED_ORGANIZATIONS));
@@ -120,6 +123,9 @@ class MembershipServiceImpl implements MembershipService {
 		String language = command.defaultLanguage() == null ? "en-US" : command.defaultLanguage();
 		settings.save(new OrganizationSettings(organization.getId(), language, issuer, WEB_CLIENT_ID));
 		integrations.saveAll(Integration.catalogFor(organization.getId()));
+		// The permission matrix is written with plain SQL, so the organization row must be in the database first.
+		organizations.flush();
+		rolePermissions.provisionDefaults(organization.getId());
 		members.save(new Member(organization.getId(), identity.subject(), identity.displayName(), identity.email(), Role.OWNER));
 		events.publishEvent(new OrganizationCreated(organization.getId()));
 		return toMembership(organization, Role.OWNER, plans.plansOf(List.of(organization.getId())));
@@ -128,10 +134,10 @@ class MembershipServiceImpl implements MembershipService {
 	@Override
 	@Transactional(readOnly = true)
 	public List<PendingInvitationView> pendingInvitations(Identity identity) {
-		if (identity.verifiedEmail() == null) {
+		if (identity.matchingEmail() == null) {
 			return List.of();
 		}
-		List<Invitation> pending = invitations.findByEmailAndExpiresAtAfterOrderBySentAtDesc(identity.verifiedEmail(), Instant.now());
+		List<Invitation> pending = invitations.findByEmailAndExpiresAtAfterOrderBySentAtDesc(identity.matchingEmail(), Instant.now());
 		Map<UUID, Organization> byId = organizations.findAllById(pending.stream().map(Invitation::getOrganizationId).toList())
 			.stream()
 			.collect(Collectors.toMap(Organization::getId, Function.identity()));
@@ -144,10 +150,32 @@ class MembershipServiceImpl implements MembershipService {
 
 	@Override
 	public OrganizationMembership acceptInvitation(UUID invitationId, Identity identity) {
-		Invitation invitation = invitationFor(invitationId, identity);
+		return join(invitationFor(invitationId, identity), identity, false);
+	}
+
+	@Override
+	public OrganizationMembership acceptInvitationLink(String token, Identity identity) {
+		Invitation invitation = invitations.findByTokenHash(Invitation.hashToken(token))
+			.filter(i -> !i.isExpired(Instant.now()))
+			.orElseThrow(() -> new ApiProblemException(HttpStatus.NOT_FOUND, "invitation-not-found",
+					"This invitation link is invalid or has expired"));
+		return join(invitation, identity, true);
+	}
+
+	private OrganizationMembership join(Invitation invitation, Identity identity, boolean failIfMember) {
 		UUID organizationId = invitation.getOrganizationId();
 		Optional<Member> existing = members.findByOrganizationIdAndUserSubject(organizationId, identity.subject())
-			.or(() -> members.findByOrganizationIdAndEmail(organizationId, identity.email()));
+			.or(() -> Optional.ofNullable(identity.matchingEmail())
+				.flatMap(email -> members.findByOrganizationIdAndEmail(organizationId, email))
+				.filter(m -> m.getUserSubject() == null || m.getUserSubject().equals(identity.subject())));
+		if (failIfMember && existing.isPresent() && existing.get().isActive()) {
+			throw new ApiProblemException(HttpStatus.CONFLICT, "already-member", "You are already a member of this organization");
+		}
+		if (existing.isEmpty() && identity.email() != null
+				&& members.findByOrganizationIdAndEmail(organizationId, identity.email()).isPresent()) {
+			throw new ApiProblemException(HttpStatus.CONFLICT, "email-in-use",
+					"Another member of this organization already uses the e-mail address of your account");
+		}
 		Member member;
 		if (existing.isPresent() && existing.get().isActive()) {
 			member = existing.get();
@@ -184,10 +212,10 @@ class MembershipServiceImpl implements MembershipService {
 	/** By subject; members created before the account existed (invitations, seeds) are linked by verified e-mail. */
 	private Optional<Member> findMember(UUID organizationId, Identity identity) {
 		Optional<Member> bySubject = members.findByOrganizationIdAndUserSubject(organizationId, identity.subject());
-		if (bySubject.isPresent() || identity.verifiedEmail() == null) {
+		if (bySubject.isPresent() || identity.matchingEmail() == null) {
 			return bySubject;
 		}
-		Optional<Member> byEmail = members.findByOrganizationIdAndEmail(organizationId, identity.verifiedEmail())
+		Optional<Member> byEmail = members.findByOrganizationIdAndEmail(organizationId, identity.matchingEmail())
 			.filter(m -> m.getUserSubject() == null);
 		byEmail.ifPresent(m -> m.bind(identity.subject(), identity.name()));
 		return byEmail;
@@ -195,7 +223,7 @@ class MembershipServiceImpl implements MembershipService {
 
 	private Invitation invitationFor(UUID invitationId, Identity identity) {
 		return invitations.findById(invitationId)
-			.filter(i -> identity.verifiedEmail() != null && i.getEmail().equals(identity.verifiedEmail()))
+			.filter(i -> identity.matchingEmail() != null && i.getEmail().equals(identity.matchingEmail()))
 			.filter(i -> !i.isExpired(Instant.now()))
 			.orElseThrow(() -> new ApiProblemException(HttpStatus.NOT_FOUND, "invitation-not-found",
 					"Invitation '%s' not found".formatted(invitationId)));
@@ -205,8 +233,9 @@ class MembershipServiceImpl implements MembershipService {
 		return new ApiProblemException(HttpStatus.NOT_FOUND, "organization-not-found", "Organization not found");
 	}
 
-	private static OrganizationMembership toMembership(Organization organization, Role role, Map<UUID, String> planCodes) {
+	private OrganizationMembership toMembership(Organization organization, Role role, Map<UUID, String> planCodes) {
 		return new OrganizationMembership(organization.getSlug(), organization.getName(), role,
-				role.permissions().stream().sorted().toList(), planCodes.getOrDefault(organization.getId(), "free"));
+				rolePermissions.permissionsOf(organization.getId(), role).stream().sorted().toList(),
+				planCodes.getOrDefault(organization.getId(), "free"));
 	}
 }

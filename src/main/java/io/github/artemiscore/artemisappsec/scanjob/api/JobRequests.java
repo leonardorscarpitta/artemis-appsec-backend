@@ -29,7 +29,20 @@ final class JobRequests {
 			@NotNull @Size(max = 4000) String commitMessage) {
 	}
 
-	record FailRequest(@NotBlank @Size(max = 500) String reason) {
+	/** @param accessLost the runner's pre-scan access check failed (deploy key removed, repository gone, …) */
+	record FailRequest(@NotBlank @Size(max = 500) String reason, Boolean accessLost) {
+	}
+
+	/** {@code hostKey}: the known_hosts line(s) the runner used, recorded for non-pinned servers on first contact. */
+	record AccessCheckResult(@NotNull @Pattern(regexp = "^(ok|failed)$") String status, @Size(max = 2000) String message,
+			@Size(max = 16_384) String hostKey, @Valid DetectedStack detected) {
+	}
+
+	/** The stack found in the repository's manifest files (labels as in the stack catalogue, e.g. "Angular"). */
+	record DetectedStack(@Size(max = 32) String stack, @Size(max = 20) List<@Valid @NotNull DetectedFolder> folders) {
+	}
+
+	record DetectedFolder(@Size(max = 120) String path, @Size(max = 32) String stack) {
 	}
 
 	record StageReportRequest(@NotNull StageOutcome status, @NotBlank @Size(max = 64) String tool,

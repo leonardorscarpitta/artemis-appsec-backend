@@ -1,8 +1,10 @@
 package io.github.artemiscore.artemisappsec.organization.service;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
+import io.github.artemiscore.artemisappsec.organization.domain.Permission;
 import io.github.artemiscore.artemisappsec.organization.domain.Role;
 
 public interface TeamService {
@@ -24,5 +26,8 @@ public interface TeamService {
 
 	void revokeInvitation(UUID organizationId, UUID invitationId);
 
-	List<RoleView> roles();
+	List<RoleView> roles(Tenant tenant);
+
+	/** Owners edit every role but their own; admins only analysts, developers and viewers. */
+	RoleView updateRolePermissions(Tenant tenant, Role role, Set<Permission> permissions);
 }

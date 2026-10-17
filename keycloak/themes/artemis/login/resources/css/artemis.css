@@ -1,0 +1,453 @@
+/* Artemis look for Keycloak's sign-in pages (tokens from branding/visual_design.md). */
+
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-weight: 400;
+  font-display: swap;
+  src: url('../fonts/ibm-plex-sans-latin-400-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-weight: 500;
+  font-display: swap;
+  src: url('../fonts/ibm-plex-sans-latin-500-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-weight: 600 700;
+  font-display: swap;
+  src: url('../fonts/ibm-plex-sans-latin-600-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-weight: 400;
+  font-display: swap;
+  src: url('../fonts/ibm-plex-mono-latin-400-normal.woff2') format('woff2');
+}
+
+:root {
+  --art-bg: #f4f5f7;
+  --art-surface: #ffffff;
+  --art-surface-alt: #f8f9fb;
+  --art-border: #dde1e7;
+  --art-border-strong: #c5ccd6;
+  --art-text: #17202c;
+  --art-text-muted: #5a6474;
+  --art-primary: #0b4f8a;
+  --art-primary-hover: #093f6e;
+  --art-primary-soft: #e8f0f8;
+  --art-primary-contrast: #ffffff;
+  --art-focus: #2f7fd1;
+  --art-critical: #a8201a;
+  --art-critical-bg: #fdeceb;
+  --art-nav-bg: #111b27;
+  --art-radius: 6px;
+  --art-radius-sm: 4px;
+
+  --pf-v5-global--FontFamily--text: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --pf-v5-global--FontFamily--heading: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --pf-v5-global--FontFamily--monospace: 'IBM Plex Mono', ui-monospace, monospace;
+  --pf-v5-global--FontSize--md: 0.875rem;
+  --pf-v5-global--BorderRadius--sm: var(--art-radius-sm);
+  --pf-v5-global--primary-color--100: var(--art-primary);
+  --pf-v5-global--primary-color--200: var(--art-primary-hover);
+  --pf-v5-global--link--Color: var(--art-primary);
+  --pf-v5-global--link--Color--hover: var(--art-primary-hover);
+  --pf-v5-global--active-color--100: var(--art-primary);
+  --pf-v5-global--BackgroundColor--100: var(--art-surface);
+  --pf-v5-global--Color--100: var(--art-text);
+  --pf-v5-global--Color--200: var(--art-text-muted);
+  --pf-v5-global--BorderColor--100: var(--art-border);
+  --pf-v5-global--danger-color--100: var(--art-critical);
+}
+
+:root.pf-v5-theme-dark {
+  --art-bg: #0e141c;
+  --art-surface: #151d28;
+  --art-surface-alt: #18212d;
+  --art-border: #283444;
+  --art-border-strong: #3a4759;
+  --art-text: #e3e8ef;
+  --art-text-muted: #9ba7b6;
+  --art-primary: #5b9bdc;
+  --art-primary-hover: #78afe6;
+  --art-primary-soft: #1a2b40;
+  --art-primary-contrast: #0b1520;
+  --art-focus: #78afe6;
+  --art-critical: #f47c74;
+  --art-critical-bg: #3a1c1c;
+  --art-nav-bg: #0a1018;
+}
+
+html,
+body.artemis {
+  min-height: 100%;
+}
+
+body.artemis {
+  margin: 0;
+  background: var(--art-bg) !important;
+  color: var(--art-text);
+  font-family: var(--pf-v5-global--FontFamily--text);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+body.artemis a {
+  color: var(--art-primary);
+}
+
+body.artemis :focus-visible {
+  outline: 2px solid var(--art-focus);
+  outline-offset: 2px;
+}
+
+/* Layout: navy information panel + sign-in column, like the Artemis login screen. */
+.art-layout {
+  display: grid;
+  grid-template-columns: minmax(420px, 5fr) 6fr;
+  min-height: 100vh;
+}
+
+.art-info {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 2.5rem;
+  padding: 2.5rem 3rem;
+  background: var(--art-nav-bg);
+  color: #e3e8ef;
+}
+
+.art-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: #5b9bdc;
+}
+
+.art-logo-name {
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #ffffff;
+}
+
+.art-home,
+.art-home:hover {
+  text-decoration: none;
+}
+
+.art-pitch {
+  max-width: 460px;
+}
+
+.art-eyebrow {
+  margin: 0 0 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8fb8e6;
+}
+
+.art-pitch h2 {
+  margin: 0;
+  font-size: 1.85rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #ffffff;
+}
+
+.art-lead {
+  margin: 1rem 0 0;
+  font-size: 0.95rem;
+  color: #a9b4c2;
+}
+
+.art-caps {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin: 2.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.art-caps li {
+  display: flex;
+  gap: 0.9rem;
+}
+
+.art-cap-icon {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--art-radius-sm);
+  background: rgb(91 155 220 / 15%);
+  color: #8fb8e6;
+}
+
+.art-caps strong {
+  font-weight: 500;
+  color: #ffffff;
+}
+
+.art-caps p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #a9b4c2;
+}
+
+.art-facts {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  justify-content: start;
+  gap: 2rem;
+  margin: 0;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgb(255 255 255 / 10%);
+}
+
+.art-facts dt {
+  font-size: 0.75rem;
+  color: #8592a3;
+}
+
+.art-facts dd {
+  margin: 0.2rem 0 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #e3e8ef;
+}
+
+.art-side {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.art-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 1rem 1.75rem;
+}
+
+.art-bar-logo {
+  display: none;
+  margin-right: auto;
+}
+
+.art-bar-logo .art-logo {
+  color: var(--art-primary);
+}
+
+.art-bar-logo .art-logo-name {
+  color: var(--art-text);
+}
+
+.art-bar > div {
+  flex: none;
+}
+
+.art-bar .pf-v5-c-form-control {
+  width: 11.5rem;
+}
+
+.art-center {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+}
+
+/* The sign-in card (Keycloak's main panel). */
+.art-card.pf-v5-c-login__main {
+  width: 100%;
+  max-width: 420px;
+  margin: 0;
+  background: var(--art-surface);
+  border: 1px solid var(--art-border);
+  border-top: 3px solid var(--art-primary);
+  border-radius: var(--art-radius);
+  box-shadow: none;
+}
+
+.art-card .pf-v5-c-login__main-header {
+  padding: 2rem 2rem 0.5rem;
+  border: 0;
+}
+
+.art-card .pf-v5-c-login__main-header,
+.art-card .pf-v5-c-login__main-header-utilities {
+  display: block;
+}
+
+.art-card .pf-v5-c-title,
+.art-card #kc-page-title {
+  margin: 0;
+  font-size: 1.375rem;
+  font-weight: 600;
+  color: var(--art-text);
+}
+
+.art-card .pf-v5-c-login__main-body {
+  padding: 0.75rem 2rem 1.5rem;
+}
+
+.art-card .pf-v5-c-login__main-footer {
+  padding: 0 2rem 1.5rem;
+}
+
+.art-card > .pf-v5-c-login__main-footer:last-child {
+  padding: 0;
+}
+
+.art-card .pf-v5-c-login__main-footer-band {
+  border-top: 1px solid var(--art-border);
+  background: transparent;
+  color: var(--art-text-muted);
+}
+
+/* Form controls, buttons and alerts. */
+.artemis .pf-v5-c-form-control {
+  --pf-v5-c-form-control--BorderRadius: var(--art-radius-sm);
+  --pf-v5-c-form-control--before--BorderColor: var(--art-border-strong);
+  --pf-v5-c-form-control--after--BorderColor: var(--art-border-strong);
+  --pf-v5-c-form-control--BackgroundColor: var(--art-surface);
+  --pf-v5-c-form-control--Color: var(--art-text);
+  --pf-v5-c-form-control--hover--after--BorderBottomColor: var(--art-primary);
+  --pf-v5-c-form-control--focus--after--BorderBottomColor: var(--art-primary);
+}
+
+.artemis .pf-v5-c-form__label-text {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--art-text);
+}
+
+.artemis .pf-v5-c-button {
+  --pf-v5-c-button--BorderRadius: var(--art-radius-sm);
+  min-height: 40px;
+  font-weight: 500;
+}
+
+.artemis .pf-v5-c-button.pf-m-primary {
+  --pf-v5-c-button--m-primary--BackgroundColor: var(--art-primary);
+  --pf-v5-c-button--m-primary--hover--BackgroundColor: var(--art-primary-hover);
+  --pf-v5-c-button--m-primary--focus--BackgroundColor: var(--art-primary-hover);
+  --pf-v5-c-button--m-primary--Color: var(--art-primary-contrast);
+  --pf-v5-c-button--m-primary--hover--Color: var(--art-primary-contrast);
+}
+
+.artemis .pf-v5-c-button.pf-m-secondary {
+  --pf-v5-c-button--after--BorderColor: var(--art-border-strong);
+  --pf-v5-c-button--m-secondary--Color: var(--art-text);
+  --pf-v5-c-button--m-secondary--hover--Color: var(--art-text);
+  --pf-v5-c-button--m-secondary--BackgroundColor: var(--art-surface);
+  --pf-v5-c-button--m-secondary--hover--BackgroundColor: var(--art-surface-alt);
+}
+
+.artemis .pf-v5-c-button.pf-m-link {
+  --pf-v5-c-button--m-link--Color: var(--art-primary);
+  --pf-v5-c-button--m-link--hover--Color: var(--art-primary-hover);
+}
+
+.artemis .pf-v5-c-alert {
+  --pf-v5-c-alert--BorderTopWidth: 0;
+  border-left: 3px solid var(--art-primary);
+  border-radius: var(--art-radius-sm);
+  background: var(--art-primary-soft);
+  box-shadow: none;
+}
+
+.artemis .pf-v5-c-alert.pf-m-danger {
+  border-left-color: var(--art-critical);
+  background: var(--art-critical-bg);
+}
+
+.artemis .pf-v5-c-check__input {
+  accent-color: var(--art-primary);
+}
+
+.art-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1.25rem 1.75rem;
+  font-size: 0.8rem;
+  color: var(--art-text-muted);
+}
+
+.art-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.art-links a {
+  color: var(--art-text-muted);
+  text-decoration: none;
+}
+
+.art-links a:hover {
+  color: var(--art-primary);
+  text-decoration: underline;
+}
+
+/* Hide Keycloak's own background art and brand header. */
+#keycloak-bg.artemis {
+  background-image: none !important;
+}
+
+.artemis .pf-v5-c-login__header {
+  display: none;
+}
+
+@media (max-width: 899px) {
+  .art-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .art-info {
+    display: none;
+  }
+
+  .art-bar-logo {
+    display: block;
+  }
+}
+
+@media (max-width: 599px) {
+  .art-center {
+    align-items: flex-start;
+    padding: 0.5rem 1rem 1.5rem;
+  }
+
+  .art-card .pf-v5-c-login__main-header,
+  .art-card .pf-v5-c-login__main-body,
+  .art-card .pf-v5-c-login__main-footer {
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
+  }
+
+  .art-bar {
+    padding: 1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artemis * {
+    transition: none !important;
+  }
+}

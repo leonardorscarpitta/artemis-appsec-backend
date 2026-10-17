@@ -25,8 +25,11 @@ class FirstScanOnProjectCreated {
 	@TransactionalEventListener
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	void onProjectCreated(ProjectCreated event) {
+		if (event.privateRepository()) {
+			return;
+		}
 		try {
-			runs.queueScan(event.organizationId(), event.name(), event.actor());
+			runs.queueScan(event.organizationId(), event.name(), event.actor(), null);
 		}
 		catch (BusinessRuleException e) {
 			log.info("First scan of '{}' was not queued: {}", event.name(), e.getMessage());

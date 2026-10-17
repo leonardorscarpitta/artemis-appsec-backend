@@ -23,6 +23,8 @@ import io.github.artemiscore.artemisappsec.organization.service.PendingInvitatio
 import io.github.artemiscore.artemisappsec.shared.error.ApiProblemException;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 @RestController
 @RequestMapping("/api/v1")
@@ -62,6 +64,15 @@ class MembershipController {
 	@PostMapping("/me/invitations/{id}/accept")
 	OrganizationMembership accept(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
 		return memberships.acceptInvitation(id, identity(jwt));
+	}
+
+	/** One-time invitation link (works for any signed-in account; the token is consumed). */
+	@PostMapping("/me/invitations/accept")
+	OrganizationMembership acceptLink(@Valid @RequestBody AcceptInvitationRequest request, @AuthenticationPrincipal Jwt jwt) {
+		return memberships.acceptInvitationLink(request.token(), identity(jwt));
+	}
+
+	record AcceptInvitationRequest(@NotBlank @Size(max = 100) String token) {
 	}
 
 	@PostMapping("/me/invitations/{id}/decline")

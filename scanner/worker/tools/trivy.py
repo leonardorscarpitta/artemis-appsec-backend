@@ -1,7 +1,10 @@
 """Trivy: dependency vulnerabilities, licenses and misconfigurations (IaC and Dockerfiles)."""
+import ipaddress
+import re
+import socket
 from pathlib import Path
 
-from .base import ToolResult, finding, location, read_json, run, severity, summary
+from .base import ToolError, ToolResult, finding, location, read_json, run, severity, summary
 
 ECOSYSTEMS = {
     "npm": "npm", "yarn": "npm", "pnpm": "npm", "node-pkg": "npm", "bun": "npm",
@@ -12,7 +15,11 @@ ECOSYSTEMS = {
 }
 COMMON = ["--format", "json", "--quiet", "--skip-version-check", "--timeout", "10m"]
 # Single-threaded filesystem scans keep memory within the runner limit (`trivy config` has no such flag).
-FS_ONLY = ["--parallel", "1"]
+# --offline-scan: never query package registries (e.g. Maven Central for parent POMs) — they rate-limit (429)
+# and would learn the repository's dependencies. The vulnerability database is still updated.
+FS_ONLY = ["--parallel", "1", "--offline-scan"]
+# Compressed size; layers are unpacked in the 1 GB in-memory workspace.
+MAX_IMAGE_SIZE = "700MB"
 
 
 def _cvss(vuln: dict) -> tuple[float | None, str | None]:
@@ -27,6 +34,36 @@ def _cvss(vuln: dict) -> tuple[float | None, str | None]:
 def vulnerabilities(src: Path, out: Path, timeout: int) -> ToolResult:
     report = out / "trivy-vuln.json"
     run(["trivy", "fs", "--scanners", "vuln", *COMMON, *FS_ONLY, "--output", str(report), str(src)], timeout, out)
+    findings = _vulnerability_findings(report)
+    return ToolResult(findings, summary("Trivy", findings))
+
+
+def image(reference: str, out: Path, timeout: int) -> ToolResult:
+    """Scans a published image pulled straight from its registry: nothing is built or run, no container socket."""
+    require_public_registry(reference)
+    report = out / "trivy-image.json"
+    # Layers are unpacked under `out` (the in-memory workspace), never in the read-only image or /tmp.
+    run(["trivy", "image", "--image-src", "remote", "--scanners", "vuln", "--max-image-size", MAX_IMAGE_SIZE,
+         *COMMON, *FS_ONLY, "--output", str(report), "--", reference], timeout, out, env={"TMPDIR": str(out)})
+    findings = _vulnerability_findings(report)
+    return ToolResult(findings, summary("Trivy", findings))
+
+
+def require_public_registry(reference: str) -> None:
+    first, _, rest = reference.partition("/")
+    registry = first if rest and ("." in first or ":" in first) else "registry-1.docker.io"
+    host, _, port = registry.partition(":")
+    if host == "localhost" or (port and port != "443"):
+        raise ToolError("Only images from public registries on the default HTTPS port can be scanned")
+    try:
+        infos = socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
+    except socket.gaierror:
+        raise ToolError(f"Registry {host} could not be resolved") from None
+    if any(not ipaddress.ip_address(info[4][0]).is_global for info in infos):
+        raise ToolError(f"Registry {host} is not a public address")
+
+
+def _vulnerability_findings(report: Path) -> list[dict]:
     findings = []
     for result in (read_json(report, {}) or {}).get("Results") or []:
         ecosystem = ECOSYSTEMS.get(result.get("Type", ""), result.get("Type") or "other")
@@ -43,7 +80,7 @@ def vulnerabilities(src: Path, out: Path, timeout: int) -> ToolResult:
                          "fixedVersion": vuln.get("FixedVersion") or None, "ecosystem": ecosystem},
                 location=location(result.get("Target"), None),
             ))
-    return ToolResult(findings, summary("Trivy", findings))
+    return findings
 
 
 def licenses(src: Path, out: Path, timeout: int) -> ToolResult:
@@ -68,9 +105,39 @@ def licenses(src: Path, out: Path, timeout: int) -> ToolResult:
     return ToolResult(findings, summary("Trivy", findings))
 
 
+# Terraform only treats sources starting with ./ or ../ as local; anything else (git::, URLs, registry, GitHub
+# shorthand, …) is downloaded.
+_REMOTE_SOURCE = re.compile(r'(?P<head>"?source"?\s*[=:]\s*")(?P<value>(?!\.\.?/)[^"\n]+)(?P<tail>")')
+
+
+def disable_remote_modules(src: Path) -> int:
+    """Points remote Terraform module sources at a missing local path in the scanned copy.
+
+    Trivy downloads remote modules (git, HTTP, S3, registry) while evaluating Terraform and ignores --offline-scan
+    and proxy settings for it, so a repository could make the runner request internal URLs. Findings in downloaded
+    modules are excluded anyway, so nothing is lost.
+    """
+    changed = 0
+    for path in [*src.rglob("*.tf"), *src.rglob("*.tf.json")]:
+        if path.is_symlink() or not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        rewritten, count = _REMOTE_SOURCE.subn(r"\g<head>./.artemis-remote-module-not-fetched\g<tail>", text)
+        if count:
+            path.write_text(rewritten, encoding="utf-8")
+            changed += count
+    return changed
+
+
 def _misconfig(src: Path, out: Path, timeout: int, scanners: str, name: str) -> ToolResult:
     report = out / f"trivy-{name}.json"
-    run(["trivy", "config", "--misconfig-scanners", scanners, *COMMON, "--output", str(report), str(src)], timeout, out)
+    if "terraform" in scanners:
+        disable_remote_modules(src)
+    run(["trivy", "config", "--misconfig-scanners", scanners, "--skip-check-update", "--tf-exclude-downloaded-modules",
+         *COMMON, "--output", str(report), str(src)], timeout, out)
     findings = []
     for result in (read_json(report, {}) or {}).get("Results") or []:
         for item in result.get("Misconfigurations") or []:

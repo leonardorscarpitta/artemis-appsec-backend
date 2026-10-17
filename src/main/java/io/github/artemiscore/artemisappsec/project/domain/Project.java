@@ -21,6 +21,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.OrderColumn;
 import jakarta.persistence.Table;
 
 /** A source code repository monitored by Artemis. */
@@ -48,6 +49,10 @@ public class Project {
 	private Stack stack;
 
 	@Enumerated(EnumType.STRING)
+	@Column(name = "stack_source", nullable = false)
+	private StackSource stackSource = StackSource.MANUAL;
+
+	@Enumerated(EnumType.STRING)
 	@Column(name = "scan_schedule", nullable = false)
 	private ScanSchedule scanSchedule;
 
@@ -67,6 +72,23 @@ public class Project {
 	@OneToMany(mappedBy = "project", cascade = CascadeType.ALL, orphanRemoval = true)
 	private List<PipelineStageConfig> pipeline = new ArrayList<>();
 
+	@Column(name = "container_image")
+	private String containerImage;
+
+	/** Set only for private (SSH) repositories. */
+	@Enumerated(EnumType.STRING)
+	@Column(name = "access_status")
+	private AccessStatus accessStatus;
+
+	/** known_hosts line recorded on first contact with a Git server that is not pinned in the scanner (TOFU). */
+	@Column(name = "ssh_known_host")
+	private String sshKnownHost;
+
+	@ElementCollection(fetch = FetchType.EAGER)
+	@CollectionTable(name = "project_folder", joinColumns = @JoinColumn(name = "project_id"))
+	@OrderColumn(name = "position")
+	private List<Folder> folders = new ArrayList<>();
+
 	@Column(name = "last_scan_at")
 	private Instant lastScanAt;
 
@@ -82,10 +104,13 @@ public class Project {
 		this.name = name;
 		this.sshUrl = sshUrl;
 		this.branch = branch;
-		this.stack = stack;
+		// No stack means "detect it automatically" (placeholder until the first successful access check).
+		this.stack = stack == null ? Stack.REACT : stack;
+		this.stackSource = stack == null ? StackSource.PENDING : StackSource.MANUAL;
 		this.scanSchedule = ScanSchedule.EVERY_24_HOURS;
 		this.dockerfileMode = DockerfileMode.RECOMMENDED;
 		this.createdAt = Instant.now();
+		this.accessStatus = isPrivateUrl(sshUrl) ? AccessStatus.PENDING : null;
 		for (Stage stage : Stage.values()) {
 			pipeline.add(new PipelineStageConfig(this, stage, stage.enabledByDefault(), stage.defaultTool(), stage.defaultFailOn()));
 		}
@@ -139,8 +164,84 @@ public class Project {
 		return branch;
 	}
 
+	/** SSH URLs point to private repositories cloned with an Artemis-generated deploy key. */
+	public static boolean isPrivateUrl(String url) {
+		return url != null && (url.startsWith("git@") || url.startsWith("ssh://"));
+	}
+
+	public boolean isPrivate() {
+		return isPrivateUrl(sshUrl);
+	}
+
+	public AccessStatus getAccessStatus() {
+		return accessStatus;
+	}
+
+	public String getSshKnownHost() {
+		return sshKnownHost;
+	}
+
+	public void updateAccess(AccessStatus status) {
+		if (isPrivate()) {
+			this.accessStatus = status;
+		}
+	}
+
+	/** Records the server's host key the first time it is seen; later checks never replace it. */
+	public void recordHostKeyIfAbsent(String knownHost) {
+		if (sshKnownHost == null && knownHost != null && !knownHost.isBlank()) {
+			this.sshKnownHost = knownHost.strip();
+		}
+	}
+
+	public String getContainerImage() {
+		return containerImage;
+	}
+
+	public void updateContainerImage(String containerImage) {
+		this.containerImage = containerImage;
+	}
+
+	public List<Folder> getFolders() {
+		return folders;
+	}
+
+	/** Empty folders scan the whole repository; a monorepo's stack is its first folder's. */
+	public void updateFolders(List<Folder> folders) {
+		this.folders.clear();
+		this.folders.addAll(folders);
+		if (!folders.isEmpty()) {
+			this.stack = folders.getFirst().getStack();
+		}
+	}
+
 	public Stack getStack() {
 		return stack;
+	}
+
+	public StackSource getStackSource() {
+		return stackSource;
+	}
+
+	/** A user picked the stack (or edited the monorepo folders): detection no longer overrides it. */
+	public void chooseStack(Stack stack) {
+		this.stack = stack;
+		this.stackSource = StackSource.MANUAL;
+	}
+
+	public void markStackManual() {
+		this.stackSource = StackSource.MANUAL;
+	}
+
+	/** Applies an automatic detection unless the stack was chosen by a user. */
+	public boolean applyDetectedStack(Stack stack, List<Folder> folders) {
+		if (stackSource == StackSource.MANUAL) {
+			return false;
+		}
+		updateFolders(folders);
+		this.stack = folders.isEmpty() ? stack : folders.getFirst().getStack();
+		this.stackSource = StackSource.DETECTED;
+		return true;
 	}
 
 	public ScanSchedule getScanSchedule() {

@@ -1,8 +1,15 @@
 package io.github.artemiscore.artemisappsec.finding.api;
 
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -56,6 +63,21 @@ class FindingController {
 		return findings.search(tenant.organizationId(), new FindingQuery(q, kind, severity, status, repository, field, ascending));
 	}
 
+	/** Same filters as the list; downloads every matching finding as CSV. */
+	@GetMapping(value = "/export", produces = "text/csv")
+	ResponseEntity<String> export(Tenant tenant, @RequestParam(required = false) @Size(max = 200) String q,
+			@RequestParam(required = false) FindingKind kind,
+			@RequestParam(required = false) Severity severity, @RequestParam(required = false) FindingStatus status,
+			@RequestParam(required = false) @Size(max = 255) String repository) {
+		List<FindingSummary> rows = findings.search(tenant.organizationId(),
+				new FindingQuery(q, kind, severity, status, repository, FindingQuery.SortField.DETECTED, false));
+		String filename = "artemis-findings-%s-%s.csv".formatted(tenant.slug(), LocalDate.now(ZoneOffset.UTC));
+		return ResponseEntity.ok()
+			.contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
+			.header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(filename).build().toString())
+			.body(FindingCsv.write(rows));
+	}
+
 	@GetMapping("/{id}")
 	FindingDetails get(Tenant tenant, @PathVariable UUID id) {
 		return findings.get(tenant.organizationId(), id);
@@ -64,6 +86,6 @@ class FindingController {
 	@PostMapping("/{id}/status")
 	@RequiresPermission(Permission.TRIAGE)
 	FindingDetails changeStatus(Tenant tenant, @PathVariable UUID id, @Valid @RequestBody ChangeStatusCommand command) {
-		return findings.changeStatus(tenant.organizationId(), id, command);
+		return findings.changeStatus(tenant.organizationId(), id, command, tenant.actor());
 	}
 }

@@ -4,6 +4,7 @@ import java.net.URI;
 import java.util.List;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,6 +23,7 @@ import io.github.artemiscore.artemisappsec.project.service.ProjectDetails;
 import io.github.artemiscore.artemisappsec.project.service.ProjectService;
 import io.github.artemiscore.artemisappsec.project.service.ProjectSettings;
 import io.github.artemiscore.artemisappsec.project.service.ProjectSummary;
+import io.github.artemiscore.artemisappsec.project.service.RepositoryAccess;
 import io.github.artemiscore.artemisappsec.project.service.StageUpdate;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -65,6 +67,33 @@ class RepositoryController {
 	ProjectDetails updatePipeline(Tenant tenant, @PathVariable String name,
 			@RequestBody List<@Valid StageUpdate> stages) {
 		return projects.updatePipeline(tenant.organizationId(), name, stages);
+	}
+
+	@GetMapping("/repositories/{name}/access")
+	RepositoryAccess access(Tenant tenant, @PathVariable String name) {
+		return projects.access(tenant.organizationId(), name);
+	}
+
+	/** Generates a new deploy key for a private repository; the old one stops working. */
+	@PostMapping("/repositories/{name}/access/key")
+	@RequiresPermission(Permission.INTEGRATIONS)
+	RepositoryAccess rotateKey(Tenant tenant, @PathVariable String name) {
+		return projects.rotateKey(tenant.organizationId(), name);
+	}
+
+	/** Asks the scanner to verify it can read the private repository with its deploy key. */
+	@PostMapping("/repositories/{name}/access/checks")
+	@RequiresPermission(Permission.PIPELINES)
+	ResponseEntity<RepositoryAccess> checkAccess(Tenant tenant, @PathVariable String name) {
+		return ResponseEntity.accepted().body(projects.requestAccessCheck(tenant.organizationId(), name));
+	}
+
+	/** Removes the repository with its findings, runs, reports, deploy keys and risk acceptances. */
+	@DeleteMapping("/repositories/{name}")
+	@RequiresPermission(Permission.PIPELINES)
+	ResponseEntity<Void> delete(Tenant tenant, @PathVariable String name) {
+		projects.delete(tenant.organizationId(), name);
+		return ResponseEntity.noContent().build();
 	}
 
 	@GetMapping("/pipeline/stages")

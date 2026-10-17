@@ -1,10 +1,10 @@
 package io.github.artemiscore.artemisappsec.organization.service;
 
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
@@ -13,9 +13,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import io.github.artemiscore.artemisappsec.organization.domain.Invitation;
 import io.github.artemiscore.artemisappsec.organization.domain.Member;
+import io.github.artemiscore.artemisappsec.organization.domain.Permission;
 import io.github.artemiscore.artemisappsec.organization.domain.Role;
 import io.github.artemiscore.artemisappsec.organization.persistence.InvitationRepository;
 import io.github.artemiscore.artemisappsec.organization.persistence.MemberRepository;
+import io.github.artemiscore.artemisappsec.organization.persistence.RolePermissionStore;
 import io.github.artemiscore.artemisappsec.shared.error.ApiProblemException;
 import io.github.artemiscore.artemisappsec.shared.error.BusinessRuleException;
 import io.github.artemiscore.artemisappsec.shared.error.ResourceNotFoundException;
@@ -26,10 +28,12 @@ class TeamServiceImpl implements TeamService {
 
 	private final MemberRepository members;
 	private final InvitationRepository invitations;
+	private final RolePermissionStore rolePermissions;
 
-	TeamServiceImpl(MemberRepository members, InvitationRepository invitations) {
+	TeamServiceImpl(MemberRepository members, InvitationRepository invitations, RolePermissionStore rolePermissions) {
 		this.members = members;
 		this.invitations = invitations;
+		this.rolePermissions = rolePermissions;
 	}
 
 	@Override
@@ -41,6 +45,8 @@ class TeamServiceImpl implements TeamService {
 	@Transactional
 	public MemberView changeRole(Tenant tenant, UUID memberId, Role role) {
 		Member member = loadOther(tenant, memberId, "change your own role");
+		requireOwnerForAdmins(tenant, member.getRole());
+		requireOwnerForAdmins(tenant, role);
 		member.changeRole(role);
 		return toView(member);
 	}
@@ -52,6 +58,7 @@ class TeamServiceImpl implements TeamService {
 		if (member.getRole() == Role.OWNER) {
 			throw new BusinessRuleException("The owner cannot be removed");
 		}
+		requireOwnerForAdmins(tenant, member.getRole());
 		members.delete(member);
 	}
 
@@ -81,6 +88,7 @@ class TeamServiceImpl implements TeamService {
 	@Override
 	@Transactional
 	public InvitationView invite(Tenant tenant, InviteCommand command) {
+		requireOwnerForAdmins(tenant, command.role());
 		String email = command.email().strip().toLowerCase(Locale.ROOT);
 		if (members.findByOrganizationIdAndEmail(tenant.organizationId(), email).filter(Member::isActive).isPresent()) {
 			throw new ApiProblemException(HttpStatus.CONFLICT, "already-member", "'%s' is already a member".formatted(email));
@@ -96,7 +104,9 @@ class TeamServiceImpl implements TeamService {
 		});
 		// Invitations are not e-mailed yet: the invitee sees them after signing in with this address.
 		Invitation invitation = new Invitation(tenant.organizationId(), email, command.role(), inviterName(tenant));
-		return toView(invitations.save(invitation), Instant.now());
+		// save() merges (the id is pre-assigned) and returns a copy without the raw link token, so answer from this one.
+		invitations.save(invitation);
+		return toView(invitation, Instant.now());
 	}
 
 	@Override
@@ -114,15 +124,48 @@ class TeamServiceImpl implements TeamService {
 	}
 
 	@Override
-	public List<RoleView> roles() {
-		return Arrays.stream(Role.values())
-			.map(role -> new RoleView(role, role.permissions().stream().sorted().toList(), role != Role.OWNER))
+	public List<RoleView> roles(Tenant tenant) {
+		return rolePermissions.matrix(tenant.organizationId()).entrySet().stream()
+			.map(e -> toView(tenant, e.getKey(), e.getValue()))
 			.toList();
+	}
+
+	@Override
+	@Transactional
+	public RoleView updateRolePermissions(Tenant tenant, Role role, Set<Permission> permissions) {
+		if (tenant.role() != Role.OWNER && tenant.role() != Role.ADMIN) {
+			throw new ApiProblemException(HttpStatus.FORBIDDEN, "forbidden", "Only owners and admins can change role permissions");
+		}
+		if (role == Role.OWNER) {
+			throw new ApiProblemException(HttpStatus.BAD_REQUEST, "role-not-editable", "The owner always has every permission");
+		}
+		requireOwnerForAdmins(tenant, role);
+		if (!permissions.contains(Permission.VIEW_FINDINGS)) {
+			throw new ApiProblemException(HttpStatus.BAD_REQUEST, "permission-required", "Every role can view findings");
+		}
+		if (permissions.contains(Permission.BILLING)) {
+			throw new ApiProblemException(HttpStatus.BAD_REQUEST, "owner-only-permission",
+					"Billing (plan, ownership, deleting the organization) belongs to the owner only");
+		}
+		rolePermissions.replace(tenant.organizationId(), role, permissions);
+		return toView(tenant, role, rolePermissions.permissionsOf(tenant.organizationId(), role));
+	}
+
+	private static RoleView toView(Tenant tenant, Role role, Set<Permission> permissions) {
+		boolean editable = role != Role.OWNER && (tenant.role() == Role.OWNER || (tenant.role() == Role.ADMIN && role != Role.ADMIN));
+		return new RoleView(role, permissions.stream().sorted().toList(), role != Role.OWNER, editable);
 	}
 
 	private String inviterName(Tenant tenant) {
 		return tenant.memberId() == null ? tenant.actor()
 				: members.findById(tenant.memberId()).map(Member::getName).orElse(tenant.actor());
+	}
+
+	/** Only the owner manages admins: admins cannot promote, demote, invite or remove admins. */
+	private static void requireOwnerForAdmins(Tenant tenant, Role role) {
+		if (role == Role.ADMIN && tenant.role() != Role.OWNER) {
+			throw new ApiProblemException(HttpStatus.FORBIDDEN, "owner-only", "Only the owner can manage admins");
+		}
 	}
 
 	private Member loadOther(Tenant tenant, UUID memberId, String forbiddenOnSelf) {
@@ -148,6 +191,6 @@ class TeamServiceImpl implements TeamService {
 
 	private static InvitationView toView(Invitation i, Instant now) {
 		return new InvitationView(i.getId(), i.getEmail(), i.getRole(), i.getInvitedBy(), i.getSentAt(), i.getExpiresAt(),
-				i.isExpired(now));
+				i.isExpired(now), i.getIssuedToken());
 	}
 }

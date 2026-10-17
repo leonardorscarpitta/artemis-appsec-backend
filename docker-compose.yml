@@ -8,7 +8,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
     volumes:
       - db_data:/var/lib/postgresql
     mem_limit: 512m
@@ -38,8 +38,8 @@ services:
       - default
       - scanner
     ports:
-      - "${API_PORT:-8080}:8080"
-      - "${DEBUG_PORT:-5005}:5005"
+      - "127.0.0.1:${API_PORT:-8080}:8080"
+      - "127.0.0.1:${DEBUG_PORT:-5005}:5005"  # JDWP has no authentication: never expose it beyond this machine
     volumes:
       - ./:/app
     depends_on:
@@ -73,6 +73,9 @@ services:
       - --hostname-backchannel-dynamic=true
       - --proxy-headers=xforwarded
       - --health-enabled=true
+      # Dev only: reload the Artemis theme on every request while editing it.
+      - --spi-theme--cache-themes=false
+      - --spi-theme--cache-templates=false
     environment:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://db:5432/keycloak
@@ -88,6 +91,7 @@ services:
       KC_SMTP_FROM: ${KC_SMTP_FROM:-no-reply@artemisappsec.localhost}
     volumes:
       - ./keycloak/realm-artemisappsec.json:/opt/keycloak/data/import/realm-artemisappsec.json:ro
+      - ./keycloak/themes/artemis:/opt/keycloak/themes/artemis:ro
     mem_limit: 768m
     depends_on:
       keycloak-db-init:
@@ -97,7 +101,7 @@ services:
     image: caddy:2-alpine
     restart: unless-stopped
     ports:
-      - "${AUTH_PORT:-9443}:9443"
+      - "127.0.0.1:${AUTH_PORT:-9443}:9443"
     volumes:
       - ./keycloak/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -109,7 +113,7 @@ services:
   mailpit:
     image: axllent/mailpit:v1.27
     ports:
-      - "${MAILPIT_UI_PORT:-8025}:8025"
+      - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"
     mem_limit: 64m
 
   # Runs the open-source scanners (README "Scanner runner"). Sandboxed: read-only root filesystem, no Linux
@@ -121,6 +125,7 @@ services:
     environment:
       ARTEMIS_API_URL: http://api:8080
       SCANNER_TOKEN: ${SCANNER_TOKEN:-}
+      SCANNER_RUN_TIMEOUT_SECONDS: ${SCANNER_RUN_TIMEOUT_SECONDS:-3600}
     read_only: true
     tmpfs:
       - /tmp:rw,size=512m,mode=1777

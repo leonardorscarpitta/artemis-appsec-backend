@@ -9,8 +9,11 @@ public record Identity(String subject, String username, String name, String emai
 		email = email == null ? null : email.strip().toLowerCase(Locale.ROOT);
 	}
 
-	/** The e-mail, only when the identity provider verified it (memberships and invitations match on it). */
-	public String verifiedEmail() {
+	/**
+	 * The e-mail memberships and invitations may match on: only a verified one. E-mail verification is off in the
+	 * realm, so new accounts join through one-time invitation links instead.
+	 */
+	public String matchingEmail() {
 		return emailVerified ? email : null;
 	}
 

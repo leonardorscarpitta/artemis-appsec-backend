@@ -22,5 +22,8 @@ public interface MembershipService {
 
 	void declineInvitation(UUID invitationId, Identity identity);
 
+	/** Joins through a one-time invitation link; the invitation is consumed. */
+	OrganizationMembership acceptInvitationLink(String token, Identity identity);
+
 	void leave(String slug, Identity identity);
 }
