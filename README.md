@@ -160,7 +160,7 @@ Rules:
 | `finding` | Findings of every kind (vulnerability, secret, code, config, license), status workflow and timeline; ingestion of scanner results with deduplication, auto-fix and reopen; provides open counts to `project` via `ProjectFindingStats` | `/api/v1/findings` |
 | `pipelinerun` | Pipeline executions: list/filter, 7-day summary, run detail with stage logs, re-run, cancel and manual scans (quota-checked; a repository's first scan is queued when it is connected) | `/api/v1/pipeline-runs`, `/api/v1/repositories/{name}/scans` |
 | `scanjob` | Internal job API for the scanner runner: claim queued runs, record the scanned commit, stage results and findings, complete/fail runs; fails runs stuck in `running` | `/internal/v1/jobs` (runner only) |
-| `dashboard` | Read-only aggregation of findings and repositories | `/api/v1/dashboard/summary` |
+| `dashboard` | Read-only aggregation of findings and repositories | `/api/v1/dashboard/summary`, `/api/v1/dashboard/trends` |
 | `report` | Security summary and OWASP compliance reports; text localized by `Accept-Language` (en-US, pt-BR). Requested reports stay `generating` until a report generator exists | `/api/v1/reports` |
 | `policy` | Organization-wide stage gates (fail threshold, required), remediation SLAs, license allow/deny lists, risk acceptances | `/api/v1/policies`, `/api/v1/risk-acceptances` |
 | `account` | The signed-in user from the JWT | `/api/v1/me` |
@@ -317,6 +317,12 @@ Policies are stored per organization (`policy` module) and applied through two p
 `id, reference, kind, ruleId, cve, repository, packageName, packageGroup, installedVersion, fixedVersion, ecosystem, title, cvss, severity, status, stage, tool, location: {path, line} | null, detectedAt, statusChangedAt`
 
 `cve`, `cvss`, the package fields and `ecosystem` are `null` for secrets, code and config findings; `location` is `null` for package-based ones. Sorting by CVSS puts findings without a score last; `q` also matches rule ids and file paths. The dashboard's `averageCvss` covers only findings with a score.
+
+### Dashboard JSON
+
+- `GET /api/v1/dashboard/summary` adds `byKind [{kind, count}]` (open + triaged findings per kind) and `topRepositories [{repository, total, critical, high, medium, low}]` (top 5 by open findings) to the KPIs.
+- `GET /api/v1/dashboard/trends?days=30|90&tz=<IANA zone>` (default `30`, `UTC`; other values → `400`) returns `{periodDays, timeZone, days: [{date, critical, high, medium, low, detected, fixed, runsSucceeded, runsFailed, runsCancelled}], meanTimeToRemediateDays, fixedInPeriod}`, one entry per day (oldest first, today included), with days in `tz`.
+- History is replayed in SQL from each finding's timeline (`finding_event`): a finding is open on a day when its last event at the end of that day (in `tz`) is `OPEN` or `TRIAGED`. Approximations: findings are counted under their **current** severity; `detected` counts first detections only (reopens are not "new"); `fixed` counts every transition to fixed (automatic or manual); mean time to remediate = first detection → fix, over the fixes in the period (`null` when there were none). Runs are counted on the day they started; running/queued runs are left out. Deleted repositories take their history with them.
 
 ## Contributing
 

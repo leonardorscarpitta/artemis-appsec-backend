@@ -9,11 +9,13 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -103,6 +105,27 @@ class PipelineRunServiceImpl implements PipelineRunService {
 		int failedByPolicy = (int) recent.stream().filter(PipelineRun::failedByPolicy).count();
 		int successRate = finished == 0 ? 0 : (int) Math.round(succeeded * 100.0 / finished);
 		return new RunsSummary(recent.size(), successRate, (int) Math.round(avgDuration), failedByPolicy);
+	}
+
+	@Override
+	public List<RunActivity> activity(UUID organizationId, LocalDate from, ZoneId zone) {
+		Map<UUID, ProjectSummary> names = projectNames(organizationId);
+		if (names.isEmpty()) {
+			return List.of();
+		}
+		Map<LocalDate, long[]> byDay = new TreeMap<>();
+		for (Object[] row : runs.dailyStatusCounts(names.keySet(), from.atStartOfDay(zone).toInstant(), zone.getId())) {
+			long[] counts = byDay.computeIfAbsent(LocalDate.parse((String) row[0]), d -> new long[3]);
+			int slot = switch (RunStatus.valueOf((String) row[1])) {
+				case SUCCESS -> 0;
+				case FAILED -> 1;
+				default -> 2;
+			};
+			counts[slot] += ((Number) row[2]).longValue();
+		}
+		return byDay.entrySet().stream()
+			.map(e -> new RunActivity(e.getKey(), e.getValue()[0], e.getValue()[1], e.getValue()[2]))
+			.toList();
 	}
 
 	@Override

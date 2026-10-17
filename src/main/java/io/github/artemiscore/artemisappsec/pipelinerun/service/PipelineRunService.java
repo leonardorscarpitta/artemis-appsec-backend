@@ -1,6 +1,8 @@
 package io.github.artemiscore.artemisappsec.pipelinerun.service;
 
 import java.time.Duration;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -13,6 +15,9 @@ public interface PipelineRunService {
 	List<RunView> find(UUID organizationId, RunFilter filter);
 
 	RunsSummary summary(UUID organizationId);
+
+	/** Runs per day since {@code from} (inclusive), with days in {@code zone}; days without runs are left out. */
+	List<RunActivity> activity(UUID organizationId, LocalDate from, ZoneId zone);
 
 	RunDetails get(UUID organizationId, long number);
 

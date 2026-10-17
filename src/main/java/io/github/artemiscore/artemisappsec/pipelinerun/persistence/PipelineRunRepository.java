@@ -38,6 +38,15 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, UUID>,
 			nativeQuery = true)
 	Optional<UUID> lockNextQueued();
 
+	/** Rows of [day (yyyy-MM-dd) in {@code zone}, status, runs] for runs started since {@code since}. */
+	@Query(value = """
+			SELECT to_char(r.started_at AT TIME ZONE :zone, 'YYYY-MM-DD') AS day, r.status, count(*)
+			FROM pipeline_run r
+			WHERE r.project_id IN (:projectIds) AND r.started_at >= :since AND r.status IN ('SUCCESS', 'FAILED', 'CANCELLED')
+			GROUP BY 1, 2
+			""", nativeQuery = true)
+	List<Object[]> dailyStatusCounts(Collection<UUID> projectIds, Instant since, String zone);
+
 	@Query(value = "SELECT nextval('pipeline_run_number_seq')", nativeQuery = true)
 	long nextNumber();
 }
