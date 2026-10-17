@@ -1,11 +1,17 @@
 """Secret scanning. Secrets are redacted by Gitleaks and the raw values are never forwarded."""
 from pathlib import Path
 
-from .base import ToolResult, finding, location, read_json, relative, run, summary
+from .base import ToolError, ToolResult, finding, location, read_json, relative, run, summary
 
 
 def scan(src: Path, out: Path, timeout: int) -> ToolResult:
     report = out / "gitleaks.json"
+    # Gitleaks reads these from the scanned directory: a repository could use them to switch detection off.
+    for name in (".gitleaks.toml", ".gitleaksignore"):
+        try:
+            (src / name).unlink(missing_ok=True)
+        except OSError as error:
+            raise ToolError(f"Could not remove the repository's {name}: {error.strerror}") from None
     run(
         ["gitleaks", "dir", str(src), "--redact", "--no-banner", "--no-color", "--log-level", "error",
          "--report-format", "json", "--report-path", str(report), "--exit-code", "0", "--max-target-megabytes", "5"],

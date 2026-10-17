@@ -1,9 +1,8 @@
 package io.github.artemiscore.artemisappsec.billing.service;
 
 import java.time.Clock;
-import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
-import java.time.ZonedDateTime;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
@@ -14,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import io.github.artemiscore.artemisappsec.billing.domain.Feature;
 import io.github.artemiscore.artemisappsec.billing.domain.Plan;
 import io.github.artemiscore.artemisappsec.billing.domain.Subscription;
+import io.github.artemiscore.artemisappsec.billing.persistence.ScanUsageCounter;
 import io.github.artemiscore.artemisappsec.billing.persistence.SubscriptionRepository;
 import io.github.artemiscore.artemisappsec.shared.config.ArtemisAppSecProperties;
 import io.github.artemiscore.artemisappsec.shared.error.BusinessRuleException;
@@ -23,11 +23,11 @@ import io.github.artemiscore.artemisappsec.shared.error.BusinessRuleException;
 class BillingServiceImpl implements BillingService {
 
 	private final SubscriptionRepository subscriptions;
-	private final ScanUsage usage;
+	private final ScanUsageCounter usage;
 	private final boolean enabled;
 	private final Clock clock = Clock.systemUTC();
 
-	BillingServiceImpl(SubscriptionRepository subscriptions, ScanUsage usage, ArtemisAppSecProperties properties) {
+	BillingServiceImpl(SubscriptionRepository subscriptions, ScanUsageCounter usage, ArtemisAppSecProperties properties) {
 		this.subscriptions = subscriptions;
 		this.usage = usage;
 		this.enabled = properties.billing() != null && properties.billing().enabled();
@@ -62,9 +62,10 @@ class BillingServiceImpl implements BillingService {
 	}
 
 	@Override
-	public void assertCanScan(UUID organizationId) {
+	@Transactional
+	public void consumeScan(UUID organizationId) {
 		int limit = current(organizationId).getPlan().monthlyScanLimit();
-		if (usage.scansSince(organizationId, periodStart()) >= limit) {
+		if (!usage.tryIncrement(organizationId, currentMonth(), limit)) {
 			throw new BusinessRuleException("Monthly scan limit reached (%d scans on the current plan)".formatted(limit));
 		}
 	}
@@ -79,13 +80,14 @@ class BillingServiceImpl implements BillingService {
 			.orElseThrow(() -> new IllegalStateException("Organization %s has no subscription".formatted(organizationId)));
 	}
 
-	private Instant periodStart() {
-		return ZonedDateTime.now(clock.withZone(ZoneOffset.UTC)).withDayOfMonth(1).toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant();
+	private LocalDate currentMonth() {
+		return LocalDate.now(clock.withZone(ZoneOffset.UTC)).withDayOfMonth(1);
 	}
 
 	private BillingOverview toOverview(Subscription subscription) {
-		Instant start = periodStart();
-		UsageView usageView = new UsageView(usage.scansSince(subscription.getOrganizationId(), start), subscription.getPlan().monthlyScanLimit(), start);
+		LocalDate month = currentMonth();
+		UsageView usageView = new UsageView(usage.scans(subscription.getOrganizationId(), month), subscription.getPlan().monthlyScanLimit(),
+				month.atStartOfDay(ZoneOffset.UTC).toInstant());
 		return new BillingOverview(enabled, subscription.getPlan(), subscription.getStartedAt(), plans(),
 				subscription.getPlan().features().stream().sorted().toList(), usageView);
 	}

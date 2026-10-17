@@ -13,11 +13,13 @@ class Config:
     poll_interval: float
     clone_timeout: int
     heartbeat_file: Path
+    run_timeout: int
 
     @staticmethod
     def from_env(require_api: bool = True) -> "Config":
         api_url = os.environ.get("ARTEMIS_API_URL", "http://api:8080").rstrip("/")
-        token = os.environ.get("SCANNER_TOKEN", "")
+        # Read once and dropped from the environment so child processes (tools) never inherit it.
+        token = os.environ.pop("SCANNER_TOKEN", "")
         if require_api:
             if not api_url.startswith(("http://", "https://")):
                 raise SystemExit("ARTEMIS_API_URL must be an http(s) URL")
@@ -30,4 +32,5 @@ class Config:
             poll_interval=float(os.environ.get("POLL_INTERVAL_SECONDS", "5")),
             clone_timeout=int(os.environ.get("CLONE_TIMEOUT_SECONDS", "300")),
             heartbeat_file=Path(os.environ.get("HEARTBEAT_FILE", "/tmp/artemis-runner.heartbeat")),
+            run_timeout=int(os.environ.get("SCANNER_RUN_TIMEOUT_SECONDS", "3600")),
         )

@@ -72,13 +72,20 @@ class ProjectServiceImpl implements ProjectService {
 	@Override
 	@Transactional
 	public ProjectDetails create(UUID organizationId, CreateProjectCommand command, String actor) {
+		// Every repository is cloned over SSH with its own deploy key, which also proves the user controls it.
+		GitHost host = Project.isPrivateUrl(command.url()) ? GitHost.of(command.url()).orElse(null) : null;
+		if (host == null) {
+			throw new IllegalArgumentException("Use an SSH URL such as git@github.com:owner/repo.git or ssh://git@host/owner/repo.git");
+		}
+		if (host.disallowed()) {
+			throw new IllegalArgumentException("The repository host must be a public Git server name, such as github.com");
+		}
 		String name = nameFromUrl(command.url());
+		if (name.isBlank() || name.equals(".") || name.equals("..")) {
+			throw new IllegalArgumentException("The repository URL must end with the repository name, such as owner/repo.git");
+		}
 		if (projects.existsByOrganizationIdAndName(organizationId, name)) {
 			throw new BusinessRuleException("A repository named '%s' is already connected".formatted(name));
-		}
-		// Every repository is cloned over SSH with its own deploy key, which also proves the user controls it.
-		if (!Project.isPrivateUrl(command.url()) || GitHost.of(command.url()).isEmpty()) {
-			throw new IllegalArgumentException("Use an SSH URL such as git@github.com:owner/repo.git or ssh://git@host/owner/repo.git");
 		}
 		if (!keys.enabled()) {
 			throw deployKeysDisabled();

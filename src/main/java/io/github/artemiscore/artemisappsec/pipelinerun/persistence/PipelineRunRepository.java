@@ -16,7 +16,6 @@ import io.github.artemiscore.artemisappsec.pipelinerun.domain.RunStatus;
 
 public interface PipelineRunRepository extends JpaRepository<PipelineRun, UUID>, JpaSpecificationExecutor<PipelineRun> {
 
-	long countByProjectIdInAndStartedAtGreaterThanEqual(Collection<UUID> projectIds, Instant since);
 
 	@EntityGraph(attributePaths = "stages")
 	Optional<PipelineRun> findByNumber(long number);

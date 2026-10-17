@@ -19,7 +19,9 @@ spring:
 server:
   error:
     include-stacktrace: never
-  forward-headers-strategy: framework
+  # X-Forwarded-* is honoured only from trusted proxies (Tomcat's default: loopback and private ranges); override
+  # with SERVER_TOMCAT_REMOTEIP_INTERNAL_PROXIES (a regex) to match the production reverse proxy exactly.
+  forward-headers-strategy: native
 
 management:
   endpoints:

@@ -18,6 +18,9 @@ public interface BillingService {
 	/** Other modules use this to gate paid features (e.g. AI triage). */
 	boolean isEntitled(UUID organizationId, Feature feature);
 
-	/** Throws when the organization's monthly scan limit has been reached. */
-	void assertCanScan(UUID organizationId);
+	/**
+	 * Counts one scan against the organization's monthly limit, or throws when it is reached. Runs in the caller's
+	 * transaction, so a scan that is not queued after all does not use the quota.
+	 */
+	void consumeScan(UUID organizationId);
 }

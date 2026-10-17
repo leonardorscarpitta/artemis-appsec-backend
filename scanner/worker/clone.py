@@ -9,6 +9,8 @@ import subprocess
 import urllib.parse
 from pathlib import Path
 
+from .proc import run_isolated
+
 BRANCH_PATTERN = re.compile(r"^(?!-)[A-Za-z0-9._/-]{1,255}$")
 HOST_PATTERN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,252}[A-Za-z0-9])?$")
 SSH_PATH_PATTERN = re.compile(r"^(?![-/])[A-Za-z0-9._~/-]{1,400}$")
@@ -109,9 +111,9 @@ def known_hosts_for(target: SshTarget, recorded: str | None) -> str:
 def keyscan(target: SshTarget, timeout: int = 20) -> str:
     """Reads the server's host keys on first contact (trust on first use) for non-pinned servers."""
     try:
-        result = subprocess.run(
+        result = run_isolated(
             ["ssh-keyscan", "-T", "10", "-t", "ed25519,ecdsa,rsa", "-p", str(target.port), "--", target.host],
-            capture_output=True, text=True, timeout=timeout, env={"PATH": "/usr/bin:/bin"},
+            timeout=timeout, env={"PATH": "/usr/bin:/bin"},
         )
     except subprocess.TimeoutExpired:
         raise CloneRefused("Could not connect to the Git server to read its host key") from None
@@ -201,7 +203,7 @@ def ls_remote(url: str, branch: str, ssh: SshSession, timeout: int = 60) -> tupl
     validate_branch(branch)
     command = ["git", *_protocol_options(ssh), "ls-remote", "--heads", "--", url, f"refs/heads/{branch}"]
     try:
-        result = subprocess.run(command, env=_git_env(ssh), capture_output=True, text=True, timeout=timeout)
+        result = run_isolated(command, timeout=timeout, env=_git_env(ssh))
     except subprocess.TimeoutExpired:
         return False, "The Git server did not answer in time"
     if result.returncode != 0:
@@ -235,7 +237,7 @@ def clone(url: str, branch: str, destination: Path, timeout: int, max_size_mb: i
         "--branch", branch, "--", url, str(destination),
     ]
     try:
-        result = subprocess.run(command, env=_git_env(ssh), capture_output=True, text=True, timeout=timeout)
+        result = run_isolated(command, timeout=timeout, env=_git_env(ssh))
     except subprocess.TimeoutExpired:
         shutil.rmtree(destination, ignore_errors=True)
         raise CloneRefused(f"Cloning took longer than {timeout} seconds") from None
@@ -245,10 +247,7 @@ def clone(url: str, branch: str, destination: Path, timeout: int, max_size_mb: i
             raise CloneRefused(explain_ssh_error(result.stderr))
         raise CloneRefused("The repository could not be cloned. Check that the branch exists. If the repository is private, add it with its SSH URL (git@host:owner/repo.git) and set up its deploy key in the Deploy Key tab")
 
-    log = subprocess.run(
-        ["git", "-C", str(destination), "log", "-1", "--format=%H%x00%s"],
-        env=_git_env(), capture_output=True, text=True, timeout=30,
-    )
+    log = run_isolated(["git", "-C", str(destination), "log", "-1", "--format=%H%x00%s"], timeout=30, env=_git_env())
     sha, _, subject = log.stdout.strip().partition("\x00")
     shutil.rmtree(destination / ".git", ignore_errors=True)
 

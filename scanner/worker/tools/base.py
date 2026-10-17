@@ -5,6 +5,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..proc import run_isolated
 from ..sanitize import clip
 
 SEVERITIES = ("critical", "high", "medium", "low")
@@ -39,7 +40,7 @@ def tool_env(extra: dict | None = None) -> dict:
 
 def run(command: list[str], timeout: int, cwd: Path, env: dict | None = None, ok_codes=(0,)) -> subprocess.CompletedProcess:
     try:
-        result = subprocess.run(command, cwd=cwd, env=tool_env(env), capture_output=True, text=True, timeout=timeout)
+        result = run_isolated(command, timeout=timeout, cwd=cwd, env=tool_env(env))
     except FileNotFoundError:
         raise ToolError(f"{command[0]} is not installed in this runner") from None
     except subprocess.TimeoutExpired:

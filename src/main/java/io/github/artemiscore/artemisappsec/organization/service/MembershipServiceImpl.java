@@ -140,10 +140,32 @@ class MembershipServiceImpl implements MembershipService {
 
 	@Override
 	public OrganizationMembership acceptInvitation(UUID invitationId, Identity identity) {
-		Invitation invitation = invitationFor(invitationId, identity);
+		return join(invitationFor(invitationId, identity), identity, false);
+	}
+
+	@Override
+	public OrganizationMembership acceptInvitationLink(String token, Identity identity) {
+		Invitation invitation = invitations.findByTokenHash(Invitation.hashToken(token))
+			.filter(i -> !i.isExpired(Instant.now()))
+			.orElseThrow(() -> new ApiProblemException(HttpStatus.NOT_FOUND, "invitation-not-found",
+					"This invitation link is invalid or has expired"));
+		return join(invitation, identity, true);
+	}
+
+	private OrganizationMembership join(Invitation invitation, Identity identity, boolean failIfMember) {
 		UUID organizationId = invitation.getOrganizationId();
 		Optional<Member> existing = members.findByOrganizationIdAndUserSubject(organizationId, identity.subject())
-			.or(() -> members.findByOrganizationIdAndEmail(organizationId, identity.email()));
+			.or(() -> Optional.ofNullable(identity.matchingEmail())
+				.flatMap(email -> members.findByOrganizationIdAndEmail(organizationId, email))
+				.filter(m -> m.getUserSubject() == null || m.getUserSubject().equals(identity.subject())));
+		if (failIfMember && existing.isPresent() && existing.get().isActive()) {
+			throw new ApiProblemException(HttpStatus.CONFLICT, "already-member", "You are already a member of this organization");
+		}
+		if (existing.isEmpty() && identity.email() != null
+				&& members.findByOrganizationIdAndEmail(organizationId, identity.email()).isPresent()) {
+			throw new ApiProblemException(HttpStatus.CONFLICT, "email-in-use",
+					"Another member of this organization already uses the e-mail address of your account");
+		}
 		Member member;
 		if (existing.isPresent() && existing.get().isActive()) {
 			member = existing.get();
