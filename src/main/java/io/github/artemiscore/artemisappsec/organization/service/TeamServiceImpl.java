@@ -1,10 +1,10 @@
 package io.github.artemiscore.artemisappsec.organization.service;
 
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
@@ -13,9 +13,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import io.github.artemiscore.artemisappsec.organization.domain.Invitation;
 import io.github.artemiscore.artemisappsec.organization.domain.Member;
+import io.github.artemiscore.artemisappsec.organization.domain.Permission;
 import io.github.artemiscore.artemisappsec.organization.domain.Role;
 import io.github.artemiscore.artemisappsec.organization.persistence.InvitationRepository;
 import io.github.artemiscore.artemisappsec.organization.persistence.MemberRepository;
+import io.github.artemiscore.artemisappsec.organization.persistence.RolePermissionStore;
 import io.github.artemiscore.artemisappsec.shared.error.ApiProblemException;
 import io.github.artemiscore.artemisappsec.shared.error.BusinessRuleException;
 import io.github.artemiscore.artemisappsec.shared.error.ResourceNotFoundException;
@@ -26,10 +28,12 @@ class TeamServiceImpl implements TeamService {
 
 	private final MemberRepository members;
 	private final InvitationRepository invitations;
+	private final RolePermissionStore rolePermissions;
 
-	TeamServiceImpl(MemberRepository members, InvitationRepository invitations) {
+	TeamServiceImpl(MemberRepository members, InvitationRepository invitations, RolePermissionStore rolePermissions) {
 		this.members = members;
 		this.invitations = invitations;
+		this.rolePermissions = rolePermissions;
 	}
 
 	@Override
@@ -120,10 +124,36 @@ class TeamServiceImpl implements TeamService {
 	}
 
 	@Override
-	public List<RoleView> roles() {
-		return Arrays.stream(Role.values())
-			.map(role -> new RoleView(role, role.permissions().stream().sorted().toList(), role != Role.OWNER))
+	public List<RoleView> roles(Tenant tenant) {
+		return rolePermissions.matrix(tenant.organizationId()).entrySet().stream()
+			.map(e -> toView(tenant, e.getKey(), e.getValue()))
 			.toList();
+	}
+
+	@Override
+	@Transactional
+	public RoleView updateRolePermissions(Tenant tenant, Role role, Set<Permission> permissions) {
+		if (tenant.role() != Role.OWNER && tenant.role() != Role.ADMIN) {
+			throw new ApiProblemException(HttpStatus.FORBIDDEN, "forbidden", "Only owners and admins can change role permissions");
+		}
+		if (role == Role.OWNER) {
+			throw new ApiProblemException(HttpStatus.BAD_REQUEST, "role-not-editable", "The owner always has every permission");
+		}
+		requireOwnerForAdmins(tenant, role);
+		if (!permissions.contains(Permission.VIEW_FINDINGS)) {
+			throw new ApiProblemException(HttpStatus.BAD_REQUEST, "permission-required", "Every role can view findings");
+		}
+		if (permissions.contains(Permission.BILLING)) {
+			throw new ApiProblemException(HttpStatus.BAD_REQUEST, "owner-only-permission",
+					"Billing (plan, ownership, deleting the organization) belongs to the owner only");
+		}
+		rolePermissions.replace(tenant.organizationId(), role, permissions);
+		return toView(tenant, role, rolePermissions.permissionsOf(tenant.organizationId(), role));
+	}
+
+	private static RoleView toView(Tenant tenant, Role role, Set<Permission> permissions) {
+		boolean editable = role != Role.OWNER && (tenant.role() == Role.OWNER || (tenant.role() == Role.ADMIN && role != Role.ADMIN));
+		return new RoleView(role, permissions.stream().sorted().toList(), role != Role.OWNER, editable);
 	}
 
 	private String inviterName(Tenant tenant) {

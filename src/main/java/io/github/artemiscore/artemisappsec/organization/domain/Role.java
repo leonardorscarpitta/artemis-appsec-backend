@@ -18,7 +18,8 @@ public enum Role {
 		this.permissions = permissions;
 	}
 
-	public Set<Permission> permissions() {
+	/** Built-in permissions, used for new organizations; the effective ones are per organization (RolePermissionStore). */
+	public Set<Permission> defaultPermissions() {
 		return Set.copyOf(permissions);
 	}
 
