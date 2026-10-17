@@ -43,9 +43,12 @@ class TeamController {
 		this.team = team;
 	}
 
+	/** E-mail addresses are personal data: only roles that manage the team see them. */
 	@GetMapping("/members")
 	List<MemberView> members(Tenant tenant) {
-		return team.findMembers(tenant.organizationId());
+		List<MemberView> members = team.findMembers(tenant.organizationId());
+		return tenant.role().permissions().contains(Permission.TEAM) ? members
+				: members.stream().map(MemberView::withoutEmail).toList();
 	}
 
 	@PatchMapping("/members/{id}")
@@ -68,6 +71,7 @@ class TeamController {
 	}
 
 	@GetMapping("/invitations")
+	@RequiresPermission(Permission.TEAM)
 	List<InvitationView> invitations(Tenant tenant) {
 		return team.findInvitations(tenant.organizationId());
 	}
