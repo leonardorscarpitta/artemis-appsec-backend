@@ -58,6 +58,20 @@ public class Report {
 	@JdbcTypeCode(SqlTypes.JSON)
 	private ReportContent content;
 
+	/** Short reason shown to users when generation failed. */
+	private String error;
+
+	@Column(nullable = false)
+	private int attempts;
+
+	/** When the generator last picked the report up; a report stuck past a timeout is picked up again. */
+	@Column(name = "started_at")
+	private Instant startedAt;
+
+	/** The narrative was written by AI (counts towards the organization's daily AI limit). */
+	@Column(name = "ai_used", nullable = false)
+	private boolean aiUsed;
+
 	protected Report() {
 	}
 
@@ -76,6 +90,30 @@ public class Report {
 		report.generatedBy = ReportAuthor.USER;
 		report.status = ReportStatus.GENERATING;
 		return report;
+	}
+
+	public void start(Instant now) {
+		attempts++;
+		startedAt = now;
+	}
+
+	public void complete(ReportContent generated) {
+		content = generated;
+		aiUsed = generated.narrative() == ReportContent.Narrative.AI;
+		status = ReportStatus.READY;
+		error = null;
+	}
+
+	public void fail(String reason) {
+		status = ReportStatus.FAILED;
+		error = reason;
+	}
+
+	public void retry() {
+		status = ReportStatus.GENERATING;
+		error = null;
+		attempts = 0;
+		startedAt = null;
 	}
 
 	public UUID getId() {
@@ -116,5 +154,17 @@ public class Report {
 
 	public ReportContent getContent() {
 		return content;
+	}
+
+	public UUID getOrganizationId() {
+		return organizationId;
+	}
+
+	public String getError() {
+		return error;
+	}
+
+	public int getAttempts() {
+		return attempts;
 	}
 }

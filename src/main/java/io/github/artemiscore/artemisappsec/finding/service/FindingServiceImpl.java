@@ -263,7 +263,7 @@ class FindingServiceImpl implements FindingService {
 		return new FindingSummary(f.getId(), f.getReference(), f.getKind(), f.getRuleId(), f.getCve(),
 				project == null ? null : project.name(), project != null && project.removed(), f.getPackageName(), f.getPackageGroup(), f.getInstalledVersion(),
 				f.getFixedVersion(), f.getEcosystem(), f.getTitle(), cvss, f.getSeverity(), f.getStatus(), f.getStage(),
-				f.getTool(), location, f.getDetectedAt(), f.getStatusChangedAt(), dueAt, overdue);
+				f.getTool(), location, f.getDetectedAt(), f.getStatusChangedAt(), dueAt, overdue, f.getCwe());
 	}
 
 	@Override

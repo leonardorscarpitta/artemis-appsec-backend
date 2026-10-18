@@ -10,6 +10,9 @@ public interface ReportService {
 
 	ReportDetails get(UUID organizationId, UUID id, Locale locale);
 
-	/** Queues a report. It stays {@code generating} until a report generator is available. */
+	/** Queues a report; it is generated in the background and becomes {@code ready} or {@code failed}. */
 	ReportSummary request(UUID organizationId, GenerateReportCommand command, Locale locale);
+
+	/** Queues a failed report again. */
+	ReportSummary retry(UUID organizationId, UUID id, Locale locale);
 }
