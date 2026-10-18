@@ -32,6 +32,7 @@ services:
       HOME: /tmp
       MAVEN_OPTS: -Xmx384m
       DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
+      KEYCLOAK_ADMIN_API_URL: ${KEYCLOAK_ADMIN_API_URL:-http://keycloak:8080}
     mem_limit: 1536m
     mem_reservation: 768m
     networks:
@@ -86,6 +87,7 @@ services:
       JAVA_OPTS_KC_HEAP: -XX:MaxRAMPercentage=60
       # Placeholders used by the realm import
       ARTEMISAPPSEC_WEB_ORIGIN: ${ARTEMISAPPSEC_WEB_ORIGIN:-http://localhost:4200}
+      ARTEMISAPPSEC_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_API_CLIENT_SECRET:-}
       KC_SMTP_HOST: ${KC_SMTP_HOST:-mailpit}
       KC_SMTP_PORT: ${KC_SMTP_PORT:-1025}
       KC_SMTP_FROM: ${KC_SMTP_FROM:-no-reply@artemisappsec.localhost}

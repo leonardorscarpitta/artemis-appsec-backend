@@ -56,3 +56,9 @@ artemisappsec:
   deploy-keys:
     encryption-key: ${DEPLOY_KEY_ENCRYPTION_KEY:}
     encryption-key-id: ${DEPLOY_KEY_ENCRYPTION_KEY_ID:v1}
+  # User management for platform administrators (Keycloak Admin REST API through a service-account client).
+  keycloak-admin:
+    url: ${KEYCLOAK_ADMIN_API_URL:}
+    realm: ${KEYCLOAK_ADMIN_API_REALM:artemisappsec}
+    client-id: ${KEYCLOAK_ADMIN_API_CLIENT_ID:artemisappsec-admin-api}
+    client-secret: ${KEYCLOAK_ADMIN_API_CLIENT_SECRET:}

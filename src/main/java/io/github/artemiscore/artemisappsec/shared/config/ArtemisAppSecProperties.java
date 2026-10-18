@@ -5,7 +5,30 @@ import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "artemisappsec")
-public record ArtemisAppSecProperties(Security security, Cors cors, Scanner scanner, DeployKeys deployKeys) {
+public record ArtemisAppSecProperties(Security security, Cors cors, Scanner scanner, DeployKeys deployKeys,
+		KeycloakAdmin keycloakAdmin) {
+
+	/**
+	 * Keycloak Admin REST API access for user management (confidential client with a service account).
+	 *
+	 * @param url Keycloak base URL reachable from the API (e.g. {@code http://keycloak:8080})
+	 * @param clientSecret user management is disabled when shorter than 32 characters
+	 */
+	public record KeycloakAdmin(String url, String realm, String clientId, String clientSecret) {
+
+		public static final int MIN_SECRET_LENGTH = 32;
+
+		public KeycloakAdmin {
+			url = url == null ? "" : url.strip().replaceAll("/+$", "");
+			realm = realm == null || realm.isBlank() ? "artemisappsec" : realm.strip();
+			clientId = clientId == null || clientId.isBlank() ? "artemisappsec-admin-api" : clientId.strip();
+			clientSecret = clientSecret == null ? "" : clientSecret.strip();
+		}
+
+		public boolean enabled() {
+			return !url.isEmpty() && clientSecret.length() >= MIN_SECRET_LENGTH;
+		}
+	}
 
 	/**
 	 * Encryption of the private deploy keys Artemis generates for private repositories.
