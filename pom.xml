@@ -13,12 +13,24 @@
 	<version>0.0.1-SNAPSHOT</version>
 	<name>artemisappsec</name>
 	<description>Artemis SAST platform API</description>
+	<url>https://github.com/leonardorscarpitta/artemis-appsec-backend</url>
 	<licenses>
 		<license>
-			<name>PolyForm-Noncommercial-1.0.0</name>
-			<url>https://polyformproject.org/licenses/noncommercial/1.0.0</url>
+			<name>MIT</name>
+			<url>https://opensource.org/license/mit</url>
 		</license>
 	</licenses>
+	<developers>
+		<developer>
+			<id>leonardorscarpitta</id>
+			<url>https://github.com/leonardorscarpitta</url>
+		</developer>
+	</developers>
+	<scm>
+		<url>https://github.com/leonardorscarpitta/artemis-appsec-backend</url>
+		<connection>scm:git:https://github.com/leonardorscarpitta/artemis-appsec-backend.git</connection>
+		<developerConnection>scm:git:git@github.com:leonardorscarpitta/artemis-appsec-backend.git</developerConnection>
+	</scm>
 
 	<properties>
 		<java.version>25</java.version>
