@@ -6,6 +6,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 import io.github.artemiscore.artemisappsec.organization.service.Identity;
+import io.github.artemiscore.artemisappsec.shared.config.SecurityConfig;
 
 /** Builds the caller's {@link Identity} from the access token. */
 public final class Identities {
@@ -15,7 +16,8 @@ public final class Identities {
 
 	public static Identity from(Jwt jwt) {
 		return new Identity(jwt.getSubject(), jwt.getClaimAsString("preferred_username"), jwt.getClaimAsString("name"),
-				jwt.getClaimAsString("email"), Boolean.TRUE.equals(jwt.getClaimAsBoolean("email_verified")));
+				jwt.getClaimAsString("email"), Boolean.TRUE.equals(jwt.getClaimAsBoolean("email_verified")),
+				SecurityConfig.isPlatformAdmin(jwt));
 	}
 
 	/** The current caller, or null when the request is not authenticated with a token (auth disabled). */
