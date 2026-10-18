@@ -15,7 +15,7 @@ import io.github.artemiscore.artemisappsec.organization.domain.Role;
 
 /**
  * The organization's role → permission matrix. Invariants are applied on read so stored rows can never weaken
- * them: the owner has every permission, every role can view findings and only the owner has billing.
+ * them: the owner has every permission, every role can view findings and only the owner has billing (ownership and deletion).
  */
 @Repository
 public class RolePermissionStore {

@@ -1,4 +1,4 @@
-package io.github.artemiscore.artemisappsec.billing.persistence;
+package io.github.artemiscore.artemisappsec.usage.persistence;
 
 import java.time.LocalDate;
 import java.util.UUID;
@@ -30,6 +30,13 @@ public class ScanUsageCounter {
 			.param("month", month)
 			.param("limit", limit)
 			.update() == 1;
+	}
+
+	public void decrement(UUID organizationId, LocalDate month) {
+		jdbc.sql("UPDATE organization_scan_usage SET scans = scans - 1 WHERE organization_id = :org AND month = :month AND scans > 0")
+			.param("org", organizationId)
+			.param("month", month)
+			.update();
 	}
 
 	public long scans(UUID organizationId, LocalDate month) {

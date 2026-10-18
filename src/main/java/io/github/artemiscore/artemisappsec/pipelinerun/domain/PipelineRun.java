@@ -2,6 +2,7 @@ package io.github.artemiscore.artemisappsec.pipelinerun.domain;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -68,6 +69,13 @@ public class PipelineRun {
 	@Column(name = "new_findings", nullable = false)
 	private int newFindings;
 
+	/** Written once on insert; later changes go through {@code RunQuota} so they stay atomic. */
+	@Column(name = "quota_month", updatable = false)
+	private LocalDate quotaMonth;
+
+	@Column(name = "quota_refunded", nullable = false, updatable = false)
+	private boolean quotaRefunded;
+
 	@OneToMany(mappedBy = "run", cascade = CascadeType.ALL, orphanRemoval = true)
 	private List<StageRun> stages = new ArrayList<>();
 
@@ -83,6 +91,11 @@ public class PipelineRun {
 	/** A queued manual run of the given stages, in pipeline order. */
 	public static PipelineRun queued(long number, UUID projectId, String branch, String commitSha, String commitMessage,
 			String actor, List<StageSelection> selection, List<String> folders) {
+		return queued(number, projectId, branch, commitSha, commitMessage, RunTrigger.MANUAL, actor, selection, folders);
+	}
+
+	public static PipelineRun queued(long number, UUID projectId, String branch, String commitSha, String commitMessage,
+			RunTrigger trigger, String actor, List<StageSelection> selection, List<String> folders) {
 		PipelineRun run = new PipelineRun();
 		run.folders.addAll(folders);
 		run.id = UUID.randomUUID();
@@ -91,7 +104,7 @@ public class PipelineRun {
 		run.branch = branch;
 		run.commitSha = commitSha;
 		run.commitMessage = commitMessage;
-		run.trigger = RunTrigger.MANUAL;
+		run.trigger = trigger;
 		run.actor = actor;
 		run.status = RunStatus.QUEUED;
 		run.startedAt = Instant.now();
@@ -100,6 +113,21 @@ public class PipelineRun {
 			run.stages.add(new StageRun(run, i, s.stage(), s.tool(), s.failOn()));
 		}
 		return run;
+	}
+
+	/** Records the monthly scan reserved for this new run. */
+	public void reserveQuota(LocalDate month) {
+		this.quotaMonth = month;
+	}
+
+	public void markQuotaRefunded() {
+		this.quotaMonth = null;
+		this.quotaRefunded = true;
+	}
+
+	/** True when the run failed before scanning anything, so it did not use a monthly scan. */
+	public boolean isQuotaRefunded() {
+		return quotaRefunded;
 	}
 
 	/** Monorepo folders this run scans; empty for the whole repository. */

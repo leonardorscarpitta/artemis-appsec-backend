@@ -14,12 +14,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.github.artemiscore.artemisappsec.organization.domain.Feature;
+import io.github.artemiscore.artemisappsec.organization.service.OrganizationFeatures;
 import io.github.artemiscore.artemisappsec.project.domain.AccessCheck;
 import io.github.artemiscore.artemisappsec.project.domain.AccessCheckStatus;
 import io.github.artemiscore.artemisappsec.project.domain.AccessStatus;
 import io.github.artemiscore.artemisappsec.project.domain.Folder;
 import io.github.artemiscore.artemisappsec.project.domain.PipelineStageConfig;
 import io.github.artemiscore.artemisappsec.project.domain.Project;
+import io.github.artemiscore.artemisappsec.project.domain.ScanSchedule;
 import io.github.artemiscore.artemisappsec.project.domain.Stack;
 import io.github.artemiscore.artemisappsec.project.domain.StackSource;
 import io.github.artemiscore.artemisappsec.project.persistence.AccessCheckRepository;
@@ -34,6 +37,7 @@ import io.github.artemiscore.artemisappsec.shared.error.ResourceNotFoundExceptio
 @Transactional(readOnly = true)
 class ProjectServiceImpl implements ProjectService {
 
+	private static final String REMOVED = "The repository was removed.";
 	private static final List<AccessCheckStatus> ACTIVE_CHECKS = List.of(AccessCheckStatus.QUEUED, AccessCheckStatus.RUNNING);
 
 	private final ProjectRepository projects;
@@ -42,11 +46,13 @@ class ProjectServiceImpl implements ProjectService {
 	private final AccessCheckRepository checks;
 	private final RepositoryKeys keys;
 	private final ObjectProvider<PipelinePolicy> pipelinePolicy;
+	private final OrganizationFeatures features;
 
 	ProjectServiceImpl(ProjectRepository projects, ObjectProvider<ProjectFindingStats> findingStats,
 			ApplicationEventPublisher events, AccessCheckRepository checks, RepositoryKeys keys,
-			ObjectProvider<PipelinePolicy> pipelinePolicy) {
+			ObjectProvider<PipelinePolicy> pipelinePolicy, OrganizationFeatures features) {
 		this.pipelinePolicy = pipelinePolicy;
+		this.features = features;
 		this.projects = projects;
 		this.findingStats = findingStats;
 		this.events = events;
@@ -56,9 +62,23 @@ class ProjectServiceImpl implements ProjectService {
 
 	@Override
 	public List<ProjectSummary> findAll(UUID organizationId) {
+		List<Project> found = projects.findByOrganizationIdAndDeletedAtIsNullOrderByNameAsc(organizationId);
+		Map<UUID, Long> open = openFindings(found);
+		return found.stream().map(p -> toSummary(p, open)).toList();
+	}
+
+	@Override
+	public List<ProjectSummary> findAllIncludingRemoved(UUID organizationId) {
 		List<Project> found = projects.findByOrganizationIdOrderByNameAsc(organizationId);
 		Map<UUID, Long> open = openFindings(found);
 		return found.stream().map(p -> toSummary(p, open)).toList();
+	}
+
+	@Override
+	public List<RemovedRepository> findRemoved(UUID organizationId) {
+		return projects.findByOrganizationIdAndDeletedAtIsNotNullOrderByDeletedAtDesc(organizationId).stream()
+			.map(p -> new RemovedRepository(p.getId(), p.getName(), p.getDeletedAt()))
+			.toList();
 	}
 
 	@Override
@@ -86,12 +106,13 @@ class ProjectServiceImpl implements ProjectService {
 		if (name.isBlank() || name.equals(".") || name.equals("..")) {
 			throw new IllegalArgumentException("The repository URL must end with the repository name, such as owner/repo.git");
 		}
-		if (projects.existsByOrganizationIdAndName(organizationId, name)) {
+		if (projects.existsByOrganizationIdAndNameAndDeletedAtIsNull(organizationId, name)) {
 			throw new BusinessRuleException("A repository named '%s' is already connected".formatted(name));
 		}
 		if (!keys.enabled()) {
 			throw deployKeysDisabled();
 		}
+		requireSchedulePlan(organizationId, ScanSchedule.MANUAL, command.settings().schedule());
 		Project project = new Project(organizationId, name, command.url(), command.branch(), command.stack());
 		applySettings(project, command.settings());
 		if (!command.settings().folders().isEmpty()) {
@@ -108,6 +129,16 @@ class ProjectServiceImpl implements ProjectService {
 	@Transactional
 	public void recordScan(UUID projectId, Instant finishedAt) {
 		projects.findById(projectId).ifPresent(p -> p.recordScan(finishedAt));
+	}
+
+	@Override
+	@Transactional
+	public List<DueScan> claimDueScans(int limit) {
+		Instant now = Instant.now();
+		return projects.findAllById(projects.lockDueForScheduledScan(now, limit)).stream().map(p -> {
+			p.scheduleNextScan(now);
+			return new DueScan(p.getId(), p.getOrganizationId(), p.getName());
+		}).toList();
 	}
 
 	@Override
@@ -146,6 +177,10 @@ class ProjectServiceImpl implements ProjectService {
 		return checks.lockNextQueued().map(check -> {
 			check.start();
 			Project project = projects.findById(check.getProjectId()).orElseThrow();
+			if (project.isRemoved()) {
+				check.finish(false, REMOVED);
+				return null;
+			}
 			return new AccessCheckJob(check.getId(), project.getId(), project.getName(), project.getSshUrl(),
 					project.getBranch());
 		});
@@ -200,7 +235,7 @@ class ProjectServiceImpl implements ProjectService {
 	@Transactional
 	public Optional<SshCredentials> sshCredentials(UUID projectId, String purpose) {
 		return projects.findById(projectId)
-			.filter(Project::isPrivate)
+			.filter(p -> p.isPrivate() && !p.isRemoved())
 			.flatMap(project -> keys.releasePrivateKey(projectId, purpose)
 				.map(privateKey -> new SshCredentials(privateKey, project.getSshKnownHost())));
 	}
@@ -240,6 +275,16 @@ class ProjectServiceImpl implements ProjectService {
 				fingerprint, pinned, lastCheck);
 	}
 
+	/** Choosing a timed schedule needs the feature to be enabled; keeping an existing one (now inactive) is allowed. */
+	private void requireSchedulePlan(UUID organizationId, ScanSchedule current, ScanSchedule requested) {
+		if (requested != current && requested != ScanSchedule.MANUAL
+				&& !features.isEnabled(organizationId, Feature.SCHEDULED_SCANS)) {
+			throw new ApiProblemException(HttpStatus.FORBIDDEN, "feature-not-enabled",
+					"Scheduled scans are not enabled for this organization; ask the Artemis administrators",
+					Map.of("feature", Feature.SCHEDULED_SCANS.code()));
+		}
+	}
+
 	private static ApiProblemException deployKeysDisabled() {
 		return new ApiProblemException(HttpStatus.SERVICE_UNAVAILABLE, "deploy-keys-disabled",
 				"Private repositories are not configured on this server");
@@ -249,6 +294,7 @@ class ProjectServiceImpl implements ProjectService {
 	@Transactional
 	public ProjectDetails updateSettings(UUID organizationId, String name, ProjectSettings settings) {
 		Project project = load(organizationId, name);
+		requireSchedulePlan(organizationId, project.getScanSchedule(), settings.schedule());
 		List<ProjectFolder> before = folders(project);
 		applySettings(project, settings);
 		if (!before.equals(settings.folders())) {
@@ -292,8 +338,23 @@ class ProjectServiceImpl implements ProjectService {
 
 	@Override
 	@Transactional
-	public void delete(UUID organizationId, String name) {
-		projects.delete(load(organizationId, name));
+	public void delete(UUID organizationId, String name, boolean purge) {
+		Project project = load(organizationId, name);
+		if (purge) {
+			projects.delete(project);
+			return;
+		}
+		project.remove(Instant.now());
+		keys.destroy(project.getId());
+		checks.findFirstByProjectIdAndStatusIn(project.getId(), ACTIVE_CHECKS).ifPresent(c -> c.finish(false, REMOVED));
+		events.publishEvent(new ProjectRemoved(project.getId(), organizationId));
+	}
+
+	@Override
+	@Transactional
+	public void purgeRemoved(UUID organizationId, UUID id) {
+		projects.delete(projects.findByIdAndOrganizationIdAndDeletedAtIsNotNull(id, organizationId)
+			.orElseThrow(() -> new ResourceNotFoundException("Removed repository", id)));
 	}
 
 	@Override
@@ -302,7 +363,7 @@ class ProjectServiceImpl implements ProjectService {
 	}
 
 	private Project load(UUID organizationId, String name) {
-		return projects.findByOrganizationIdAndName(organizationId, name).orElseThrow(() -> new ResourceNotFoundException("Repository", name));
+		return projects.findByOrganizationIdAndNameAndDeletedAtIsNull(organizationId, name).orElseThrow(() -> new ResourceNotFoundException("Repository", name));
 	}
 
 	private static void applySettings(Project project, ProjectSettings settings) {
@@ -348,7 +409,7 @@ class ProjectServiceImpl implements ProjectService {
 	private static ProjectSummary toSummary(Project p, Map<UUID, Long> openFindings) {
 		Long open = openFindings == null ? null : openFindings.getOrDefault(p.getId(), 0L);
 		return new ProjectSummary(p.getId(), p.getOrganizationId(), p.getName(), p.getSshUrl(), p.getBranch(), visibleStack(p), folders(p), p.getContainerImage(), p.isPrivate() ? "ssh" : "public", p.getAccessStatus(), p.getStackSource(), p.getScanSchedule(),
-				p.getLastScanAt(), open);
+				p.getNextScanAt(), p.getLastScanAt(), open, p.isRemoved());
 	}
 
 	private ProjectDetails toDetails(Project p) {

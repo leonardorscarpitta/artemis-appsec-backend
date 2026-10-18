@@ -55,6 +55,11 @@
       "termsText": "<p>Para usar o Artemis você precisa aceitar os <a href=\"${ARTEMISAPPSEC_WEB_ORIGIN}/terms\" target=\"_blank\" rel=\"noopener\">Termos de Uso</a> e a <a href=\"${ARTEMISAPPSEC_WEB_ORIGIN}/privacy\" target=\"_blank\" rel=\"noopener\">Política de Privacidade</a>. O Artemis nunca vende nem compartilha informações sobre você ou sua organização.</p>"
     }
   },
+  "roles": {
+    "realm": [
+      { "name": "artemis-admin", "description": "Artemis administrator: sees every organization's metadata and enables optional features; no access to their content" }
+    ]
+  },
   "clients": [
     {
       "clientId": "artemisappsec-web",

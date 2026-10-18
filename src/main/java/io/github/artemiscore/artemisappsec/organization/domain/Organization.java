@@ -51,4 +51,8 @@ public class Organization {
 	public String getName() {
 		return name;
 	}
+
+	public Instant getCreatedAt() {
+		return createdAt;
+	}
 }

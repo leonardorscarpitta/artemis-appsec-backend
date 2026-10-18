@@ -12,9 +12,16 @@ import java.util.UUID;
  */
 public interface ProjectService {
 
+	/** Connected repositories (removed ones are left out). */
 	List<ProjectSummary> findAll(UUID organizationId);
 
-	/** Not scoped: for internal callers (scanner jobs) that already hold a trusted project id. */
+	/** Connected and removed repositories: for showing the history (findings, runs) of removed ones by name. */
+	List<ProjectSummary> findAllIncludingRemoved(UUID organizationId);
+
+	/** Removed repositories whose history was kept. */
+	List<RemovedRepository> findRemoved(UUID organizationId);
+
+	/** Not scoped: for internal callers (scanner jobs) that already hold a trusted project id. Includes removed ones. */
 	Optional<ProjectSummary> findById(UUID id);
 
 	ProjectDetails getByName(UUID organizationId, String name);
@@ -32,12 +39,25 @@ public interface ProjectService {
 	 */
 	List<PipelineStageView> effectivePipeline(UUID organizationId, String name);
 
-	/** Deletes the repository and everything recorded for it (findings, runs, reports, keys, risk acceptances). */
-	void delete(UUID organizationId, String name);
+	/**
+	 * Removes the repository. With {@code purge} everything recorded for it is deleted too (findings, runs, reports,
+	 * keys, risk acceptances); without it the history is kept, while the deploy key is destroyed, pending access checks
+	 * are dropped and {@link ProjectRemoved} is published so its queued runs are cancelled.
+	 */
+	void delete(UUID organizationId, String name, boolean purge);
+
+	/** Deletes a removed repository's kept history. */
+	void purgeRemoved(UUID organizationId, UUID id);
 
 	List<PipelineStageView> defaultPipeline();
 
 	void recordScan(UUID projectId, Instant finishedAt);
+
+	/**
+	 * For the scheduler: claims up to {@code limit} repositories whose timed schedule is due and moves their next scan
+	 * one interval ahead (so each due scan is handed out once, even with several API instances).
+	 */
+	List<DueScan> claimDueScans(int limit);
 
 	/** How Artemis reaches the repository (deploy key, host key, last access check). */
 	RepositoryAccess access(UUID organizationId, String name);

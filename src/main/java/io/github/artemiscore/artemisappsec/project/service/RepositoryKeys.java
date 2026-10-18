@@ -18,6 +18,9 @@ public interface RepositoryKeys {
 
 	Optional<RepositoryKey> find(UUID projectId);
 
+	/** Deletes the repository's key (public and encrypted private part). */
+	void destroy(UUID projectId);
+
 	/** Decrypts the private key (OpenSSH format) for the scanner and records the use; {@code purpose} is logged. */
 	Optional<String> releasePrivateKey(UUID projectId, String purpose);
 }

@@ -1,5 +1,7 @@
 package io.github.artemiscore.artemisappsec.finding.service;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 
@@ -15,8 +17,14 @@ public interface FindingService {
 	/** Accepting requires a justification and an expiry date and records a risk acceptance. */
 	FindingDetails changeStatus(UUID organizationId, UUID id, ChangeStatusCommand command, String actor);
 
-	/** Findings of the organization that still need attention (open or triaged). */
+	/** Applies one status change to several findings at once, skipping those that cannot take it. */
+	BulkStatusResult changeStatuses(UUID organizationId, BulkStatusCommand command, String actor);
+
+	/** Findings of the organization that still need attention (open or triaged), leaving out removed repositories. */
 	List<FindingSummary> findActive(UUID organizationId);
+
+	/** Day-by-day history from {@code from} to {@code to} (inclusive), with days in {@code zone}. */
+	FindingTrend trend(UUID organizationId, LocalDate from, LocalDate to, ZoneId zone);
 
 	/**
 	 * Records everything a completed scanner stage reported for a project: new issues are opened, known ones refreshed

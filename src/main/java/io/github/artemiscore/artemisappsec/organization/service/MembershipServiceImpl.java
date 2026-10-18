@@ -17,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.github.artemiscore.artemisappsec.organization.domain.Feature;
 import io.github.artemiscore.artemisappsec.organization.domain.Integration;
 import io.github.artemiscore.artemisappsec.organization.domain.Invitation;
 import io.github.artemiscore.artemisappsec.organization.domain.Member;
@@ -27,6 +28,7 @@ import io.github.artemiscore.artemisappsec.organization.domain.Role;
 import io.github.artemiscore.artemisappsec.organization.persistence.IntegrationRepository;
 import io.github.artemiscore.artemisappsec.organization.persistence.InvitationRepository;
 import io.github.artemiscore.artemisappsec.organization.persistence.MemberRepository;
+import io.github.artemiscore.artemisappsec.organization.persistence.OrganizationFeatureStore;
 import io.github.artemiscore.artemisappsec.organization.persistence.OrganizationRepository;
 import io.github.artemiscore.artemisappsec.organization.persistence.OrganizationSettingsRepository;
 import io.github.artemiscore.artemisappsec.organization.persistence.RolePermissionStore;
@@ -37,7 +39,6 @@ import io.github.artemiscore.artemisappsec.shared.error.ApiProblemException;
 @Transactional
 class MembershipServiceImpl implements MembershipService {
 
-	static final int MAX_OWNED_ORGANIZATIONS = 5;
 	private static final String WEB_CLIENT_ID = "artemisappsec-web";
 
 	private final OrganizationRepository organizations;
@@ -45,22 +46,25 @@ class MembershipServiceImpl implements MembershipService {
 	private final InvitationRepository invitations;
 	private final OrganizationSettingsRepository settings;
 	private final IntegrationRepository integrations;
-	private final PlanLookup plans;
+	private final OrganizationFeatureStore features;
 	private final RolePermissionStore rolePermissions;
 	private final ApplicationEventPublisher events;
+	private final OwnedOrganizationLimit ownedLimit;
 	private final String issuer;
 
 	MembershipServiceImpl(OrganizationRepository organizations, MemberRepository members, InvitationRepository invitations,
-			OrganizationSettingsRepository settings, IntegrationRepository integrations, PlanLookup plans,
-			RolePermissionStore rolePermissions, ApplicationEventPublisher events, ArtemisAppSecProperties properties) {
+			OrganizationSettingsRepository settings, IntegrationRepository integrations, OrganizationFeatureStore features,
+			RolePermissionStore rolePermissions, ApplicationEventPublisher events, OwnedOrganizationLimit ownedLimit,
+			ArtemisAppSecProperties properties) {
 		this.organizations = organizations;
 		this.members = members;
 		this.invitations = invitations;
 		this.settings = settings;
 		this.integrations = integrations;
-		this.plans = plans;
+		this.features = features;
 		this.rolePermissions = rolePermissions;
 		this.events = events;
+		this.ownedLimit = ownedLimit;
 		this.issuer = properties.security().oidc().issuerUri();
 	}
 
@@ -105,21 +109,19 @@ class MembershipServiceImpl implements MembershipService {
 		Map<UUID, Organization> byId = organizations.findAllById(memberships.stream().map(Member::getOrganizationId).toList())
 			.stream()
 			.collect(Collectors.toMap(Organization::getId, Function.identity()));
-		Map<UUID, String> planCodes = plans.plansOf(byId.keySet());
+		Map<UUID, Set<Feature>> enabled = features.featuresOf(byId.keySet());
 		return memberships.stream()
-			.map(m -> toMembership(byId.get(m.getOrganizationId()), m.getRole(), planCodes))
+			.map(m -> toMembership(byId.get(m.getOrganizationId()), m.getRole(), enabled))
 			.sorted(Comparator.comparing(OrganizationMembership::name, String.CASE_INSENSITIVE_ORDER))
 			.toList();
 	}
 
 	@Override
 	public OrganizationMembership create(CreateOrganizationCommand command, Identity identity) {
-		if (members.countByUserSubjectAndRole(identity.subject(), Role.OWNER) >= MAX_OWNED_ORGANIZATIONS) {
-			throw new ApiProblemException(HttpStatus.CONFLICT, "organization-limit",
-					"You can own at most %d organizations".formatted(MAX_OWNED_ORGANIZATIONS));
-		}
-		Slugs.requireAvailable(command.slug(), organizations);
-		Organization organization = organizations.save(new Organization(command.slug(), command.name().strip()));
+		ownedLimit.requireRoomFor(identity.subject());
+		String slug = Slugs.fromName(command.name());
+		Slugs.requireAvailable(slug, organizations);
+		Organization organization = organizations.save(new Organization(slug, command.name().strip()));
 		String language = command.defaultLanguage() == null ? "en-US" : command.defaultLanguage();
 		settings.save(new OrganizationSettings(organization.getId(), language, issuer, WEB_CLIENT_ID));
 		integrations.saveAll(Integration.catalogFor(organization.getId()));
@@ -128,7 +130,7 @@ class MembershipServiceImpl implements MembershipService {
 		rolePermissions.provisionDefaults(organization.getId());
 		members.save(new Member(organization.getId(), identity.subject(), identity.displayName(), identity.email(), Role.OWNER));
 		events.publishEvent(new OrganizationCreated(organization.getId()));
-		return toMembership(organization, Role.OWNER, plans.plansOf(List.of(organization.getId())));
+		return toMembership(organization, Role.OWNER, features.featuresOf(List.of(organization.getId())));
 	}
 
 	@Override
@@ -190,7 +192,7 @@ class MembershipServiceImpl implements MembershipService {
 		}
 		invitations.delete(invitation);
 		Organization organization = organizations.findById(organizationId).orElseThrow();
-		return toMembership(organization, member.getRole(), plans.plansOf(List.of(organizationId)));
+		return toMembership(organization, member.getRole(), features.featuresOf(List.of(organizationId)));
 	}
 
 	@Override
@@ -233,9 +235,9 @@ class MembershipServiceImpl implements MembershipService {
 		return new ApiProblemException(HttpStatus.NOT_FOUND, "organization-not-found", "Organization not found");
 	}
 
-	private OrganizationMembership toMembership(Organization organization, Role role, Map<UUID, String> planCodes) {
+	private OrganizationMembership toMembership(Organization organization, Role role, Map<UUID, Set<Feature>> enabled) {
 		return new OrganizationMembership(organization.getSlug(), organization.getName(), role,
 				rolePermissions.permissionsOf(organization.getId(), role).stream().sorted().toList(),
-				planCodes.getOrDefault(organization.getId(), "free"));
+				enabled.getOrDefault(organization.getId(), Set.of()).stream().sorted().toList());
 	}
 }

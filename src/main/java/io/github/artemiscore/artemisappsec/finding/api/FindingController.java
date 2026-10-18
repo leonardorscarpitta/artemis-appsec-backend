@@ -20,6 +20,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import io.github.artemiscore.artemisappsec.finding.domain.FindingKind;
 import io.github.artemiscore.artemisappsec.finding.domain.FindingStatus;
+import io.github.artemiscore.artemisappsec.finding.service.BulkStatusCommand;
+import io.github.artemiscore.artemisappsec.finding.service.BulkStatusResult;
 import io.github.artemiscore.artemisappsec.finding.service.ChangeStatusCommand;
 import io.github.artemiscore.artemisappsec.finding.service.FindingDetails;
 import io.github.artemiscore.artemisappsec.finding.service.FindingQuery;
@@ -81,6 +83,12 @@ class FindingController {
 	@GetMapping("/{id}")
 	FindingDetails get(Tenant tenant, @PathVariable UUID id) {
 		return findings.get(tenant.organizationId(), id);
+	}
+
+	@PostMapping("/status")
+	@RequiresPermission(Permission.TRIAGE)
+	BulkStatusResult changeStatuses(Tenant tenant, @Valid @RequestBody BulkStatusCommand command) {
+		return findings.changeStatuses(tenant.organizationId(), command, tenant.actor());
 	}
 
 	@PostMapping("/{id}/status")

@@ -6,17 +6,21 @@ import java.time.DateTimeException;
 import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.github.artemiscore.artemisappsec.organization.domain.Feature;
 import io.github.artemiscore.artemisappsec.organization.domain.NotificationRule;
 import io.github.artemiscore.artemisappsec.organization.domain.Organization;
 import io.github.artemiscore.artemisappsec.organization.domain.OrganizationSettings;
 import io.github.artemiscore.artemisappsec.organization.persistence.OrganizationRepository;
 import io.github.artemiscore.artemisappsec.organization.persistence.OrganizationSettingsRepository;
+import io.github.artemiscore.artemisappsec.shared.error.ApiProblemException;
 
 @Service
 @Transactional(readOnly = true)
@@ -26,10 +30,13 @@ class OrganizationSettingsServiceImpl implements OrganizationSettingsService {
 
 	private final OrganizationSettingsRepository settings;
 	private final OrganizationRepository organizations;
+	private final OrganizationFeatures features;
 
-	OrganizationSettingsServiceImpl(OrganizationSettingsRepository settings, OrganizationRepository organizations) {
+	OrganizationSettingsServiceImpl(OrganizationSettingsRepository settings, OrganizationRepository organizations,
+			OrganizationFeatures features) {
 		this.settings = settings;
 		this.organizations = organizations;
+		this.features = features;
 	}
 
 	@Override
@@ -47,10 +54,19 @@ class OrganizationSettingsServiceImpl implements OrganizationSettingsService {
 		validateIssuer(auth.issuer());
 
 		Organization organization = organization(organizationId);
-		if (!organization.getSlug().equals(general.slug())) {
-			Slugs.requireAvailable(general.slug(), organizations);
+		String name = general.name().strip();
+		if (!organization.getName().equals(name)) {
+			if (!features.isEnabled(organizationId, Feature.ORGANIZATION_RENAME)) {
+				throw new ApiProblemException(HttpStatus.FORBIDDEN, "feature-not-enabled",
+						"Renaming is not enabled for this organization; ask the Artemis administrators",
+						Map.of("feature", Feature.ORGANIZATION_RENAME.code()));
+			}
+			String slug = Slugs.fromName(name);
+			if (!organization.getSlug().equals(slug)) {
+				Slugs.requireAvailable(slug, organizations);
+			}
+			organization.rename(name, slug);
 		}
-		organization.rename(general.name().strip(), general.slug());
 
 		OrganizationSettings current = load(organizationId);
 		current.updateGeneral(general.defaultLanguage(), general.timezone());
