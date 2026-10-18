@@ -1,4 +1,4 @@
-package io.github.artemiscore.artemisappsec.billing.persistence;
+package io.github.artemiscore.artemisappsec.usage.persistence;
 
 import java.time.LocalDate;
 import java.util.UUID;

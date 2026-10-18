@@ -5,7 +5,7 @@ import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "artemisappsec")
-public record ArtemisAppSecProperties(Security security, Cors cors, Billing billing, Scanner scanner, DeployKeys deployKeys) {
+public record ArtemisAppSecProperties(Security security, Cors cors, Scanner scanner, DeployKeys deployKeys) {
 
 	/**
 	 * Encryption of the private deploy keys Artemis generates for private repositories.
@@ -30,10 +30,6 @@ public record ArtemisAppSecProperties(Security security, Cors cors, Billing bill
 	 * @param audience required {@code aud} claim
 	 */
 	public record Oidc(String issuerUri, String jwkSetUri, String audience) {
-	}
-
-	/** @param enabled whether plans can be changed; while false the API only reports plans and the current one */
-	public record Billing(boolean enabled) {
 	}
 
 	/**

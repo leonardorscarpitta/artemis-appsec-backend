@@ -29,13 +29,13 @@ public interface PipelineRunService {
 	/** Cancels the queued and running runs of a repository (it was removed); returns how many. */
 	int cancelActive(UUID projectId);
 
-	/** Queues a manual scan of a repository with its current pipeline configuration (counts against the plan's quota). */
+	/** Queues a manual scan of a repository with its current pipeline configuration (counts against the monthly quota). */
 	/** @param folders monorepo folders to scan; null or empty scans all of the repository's folders */
 	RunDetails queueScan(UUID organizationId, String repository, String actor, List<String> folders);
 
 	/**
-	 * Queues a scheduled run (counts against the quota like a manual scan). Empty when it is skipped: the plan has no
-	 * scheduled scans, access is not verified, or a run of the repository is already queued or running.
+	 * Queues a scheduled run (counts against the quota like a manual scan). Empty when it is skipped: scheduled scans are not
+	 * enabled, access is not verified, or a run of the repository is already queued or running.
 	 */
 	Optional<RunDetails> queueScheduledScan(UUID organizationId, String repository);
 

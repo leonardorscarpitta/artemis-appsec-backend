@@ -29,14 +29,14 @@ class TeamServiceImpl implements TeamService {
 	private final MemberRepository members;
 	private final InvitationRepository invitations;
 	private final RolePermissionStore rolePermissions;
-	private final FreeOrganizationLimit freeLimit;
+	private final OwnedOrganizationLimit ownedLimit;
 
 	TeamServiceImpl(MemberRepository members, InvitationRepository invitations, RolePermissionStore rolePermissions,
-			FreeOrganizationLimit freeLimit) {
+			OwnedOrganizationLimit ownedLimit) {
 		this.members = members;
 		this.invitations = invitations;
 		this.rolePermissions = rolePermissions;
-		this.freeLimit = freeLimit;
+		this.ownedLimit = ownedLimit;
 	}
 
 	@Override
@@ -75,9 +75,7 @@ class TeamServiceImpl implements TeamService {
 		if (!target.isActive()) {
 			throw new BusinessRuleException("The new owner must be an active member");
 		}
-		if (freeLimit.isFree(tenant.organizationId())) {
-			freeLimit.requireRoomFor(target.getUserSubject());
-		}
+		ownedLimit.requireRoomFor(target.getUserSubject());
 		Member owner = load(tenant.organizationId(), tenant.memberId());
 		owner.stepDownAsOwner();
 		members.flush();
@@ -151,7 +149,7 @@ class TeamServiceImpl implements TeamService {
 		}
 		if (permissions.contains(Permission.BILLING)) {
 			throw new ApiProblemException(HttpStatus.BAD_REQUEST, "owner-only-permission",
-					"Billing (plan, ownership, deleting the organization) belongs to the owner only");
+					"Ownership and deleting the organization belong to the owner only");
 		}
 		rolePermissions.replace(tenant.organizationId(), role, permissions);
 		return toView(tenant, role, rolePermissions.permissionsOf(tenant.organizationId(), role));

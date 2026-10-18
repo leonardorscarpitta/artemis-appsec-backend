@@ -12,7 +12,7 @@ import io.github.artemiscore.artemisappsec.project.service.DueScan;
 import io.github.artemiscore.artemisappsec.project.service.ProjectService;
 
 /**
- * Queues the runs of repositories with a timed schedule (PRO). A due scan that cannot be queued (quota reached, no
+ * Queues the runs of repositories with a timed schedule (when the organization has scheduled scans enabled). A due scan that cannot be queued (quota reached, no
  * enabled stages, ...) is skipped until the next interval, never retried in a loop.
  */
 @Component

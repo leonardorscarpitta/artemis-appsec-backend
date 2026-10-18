@@ -27,7 +27,12 @@ done <<USERS
 ana.souza:Ana:Souza:ana.souza@acme.example
 carla.mendes:Carla:Mendes:carla.mendes@acme.example
 daniel.rocha:Daniel:Rocha:daniel.rocha@acme.example
+admin.artemis:Artemis:Admin:admin@artemis.example
 USERS
+
+# Platform administrator (the role is in the realm import; created here for realms imported before it existed).
+kcadm get roles/artemis-admin -r artemisappsec >/dev/null 2>&1 || kcadm create roles -r artemisappsec -s name=artemis-admin >/dev/null
+kcadm add-roles -r artemisappsec --uusername admin.artemis --rolename artemis-admin
 chmod 600 "$OUT"
 echo "Development logins (user  password) — also in $OUT:"
 cat "$OUT"
