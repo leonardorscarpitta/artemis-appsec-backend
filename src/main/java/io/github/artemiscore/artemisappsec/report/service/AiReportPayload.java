@@ -73,6 +73,6 @@ final class AiReportPayload {
 			- recommendations: 3 to 6 prioritized, actionable recommendations, most urgent first, each one or two sentences, \
 			referencing the CVE or rule ids, packages and fixed versions from the data when relevant.
 			For a "compliance" report, frame the summary and recommendations by OWASP Top 10 2021 category.
-			Write every text in English (en-US) and in Brazilian Portuguese (pt-BR) with the same meaning.
+			Write every text in English (field "en") and in Brazilian Portuguese (field "pt") with the same meaning.
 			Plain text only: no markdown, no bullet characters, no headings.""";
 }
