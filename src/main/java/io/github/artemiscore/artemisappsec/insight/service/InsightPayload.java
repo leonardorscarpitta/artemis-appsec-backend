@@ -16,7 +16,7 @@ import io.github.artemiscore.artemisappsec.shared.ai.ClaudeClient;
 
 /**
  * The only data Artemis sends to the AI provider to explain a finding: public identifiers (CVE or rule id, CWE,
- * package and versions), the scanner's title and description (no description for secrets), severity, CVSS and the
+ * package and versions), the scanner's title and description (neither for secrets), severity, CVSS and the
  * repository's stack. It never contains source code, file paths or lines, secret values, repository or organization
  * names, people or logs. Keep it that way: this is what the Privacy Policy describes.
  */
@@ -70,8 +70,9 @@ final class InsightPayload {
 		payload.put("lang", language);
 		payload.put("kind", f.kind().wireValue());
 		payload.put("id", f.cve() != null ? f.cve() : f.ruleId());
-		payload.put("title", truncate(f.title(), MAX_TITLE));
+		// Secrets are described by their rule id only.
 		if (f.kind() != FindingKind.SECRET) {
+			payload.put("title", truncate(f.title(), MAX_TITLE));
 			payload.put("desc", truncate(details.description(), MAX_DESCRIPTION));
 		}
 		payload.put("sev", f.severity().wireValue());
