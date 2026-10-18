@@ -3,11 +3,16 @@ package io.github.artemiscore.artemisappsec.report.service;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import io.github.artemiscore.artemisappsec.finding.domain.FindingKind;
 import io.github.artemiscore.artemisappsec.finding.service.FindingSummary;
 import io.github.artemiscore.artemisappsec.report.domain.ReportContent;
+import io.github.artemiscore.artemisappsec.shared.ai.ClaudeClient;
 
 /**
  * The only data Artemis sends to the AI provider to write a report: aggregated figures and the top risks described
@@ -19,6 +24,17 @@ final class AiReportPayload {
 
 	private static final int MAX_TITLE = 70;
 	private static final int MAX_RISKS = 8;
+
+	/** A small output cap keeps each report to roughly a thousand or two tokens. */
+	static final long MAX_TOKENS = 1024;
+	private static final int MAX_SUMMARY = 1200;
+	private static final int MAX_RECOMMENDATION = 500;
+	private static final int MAX_RECOMMENDATIONS = 6;
+
+	private static final Map<String, Object> TEXT = Map.of("type", "string");
+	static final Map<String, Object> RESPONSE_SCHEMA = Map.of("type", "object",
+			"properties", Map.of("summary", TEXT, "recommendations", Map.of("type", "array", "items", TEXT)),
+			"required", List.of("summary", "recommendations"), "additionalProperties", false);
 
 	private AiReportPayload() {
 	}
@@ -84,4 +100,23 @@ final class AiReportPayload {
 			recommendations: 3-5, most urgent first, max 25 words each, citing ids, packages and fixed versions (pkg is name@installed→fixed).
 			Type "compliance": frame by OWASP 2021 category (owasp = category id → open findings).
 			Write in the language of "lang" (en-US English, pt-BR Brazilian Portuguese). Plain text, no markdown.""";
+
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	record AiText(String summary, List<String> recommendations) {
+	}
+
+	static Optional<AiText> validated(AiText text) {
+		if (text.summary() == null || text.recommendations() == null || text.recommendations().isEmpty()) {
+			return Optional.empty();
+		}
+		String summary = ClaudeClient.clean(text.summary(), MAX_SUMMARY);
+		List<String> recs = text.recommendations().stream()
+			.limit(MAX_RECOMMENDATIONS)
+			.map(r -> ClaudeClient.clean(r, MAX_RECOMMENDATION))
+			.toList();
+		if (summary == null || recs.contains(null)) {
+			return Optional.empty();
+		}
+		return Optional.of(new AiText(summary, recs));
+	}
 }
