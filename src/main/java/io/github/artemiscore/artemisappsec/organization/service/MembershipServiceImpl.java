@@ -71,9 +71,12 @@ class MembershipServiceImpl implements MembershipService {
 	@Override
 	public Tenant resolve(String slug, Identity identity) {
 		Organization organization = organizations.findBySlug(slug).orElseThrow(MembershipServiceImpl::organizationNotFound);
-		Member member = findMember(organization.getId(), identity)
-			.filter(Member::isActive)
-			.orElseThrow(MembershipServiceImpl::organizationNotFound);
+		Optional<Member> membership = findMember(organization.getId(), identity).filter(Member::isActive);
+		if (membership.isEmpty() && identity.platformAdmin()) {
+			return new Tenant(organization.getId(), organization.getSlug(), null, Role.VIEWER, identity.username(),
+					EnumSet.of(Permission.VIEW_FINDINGS));
+		}
+		Member member = membership.orElseThrow(MembershipServiceImpl::organizationNotFound);
 		member.seen(Instant.now());
 		return new Tenant(organization.getId(), organization.getSlug(), member.getId(), member.getRole(), identity.username(),
 				rolePermissions.permissionsOf(organization.getId(), member.getRole()));

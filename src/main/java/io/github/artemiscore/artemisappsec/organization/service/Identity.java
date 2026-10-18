@@ -2,8 +2,12 @@ package io.github.artemiscore.artemisappsec.organization.service;
 
 import java.util.Locale;
 
-/** The signed-in account as asserted by the identity provider. {@code email} is lower-cased. */
-public record Identity(String subject, String username, String name, String email, boolean emailVerified) {
+/**
+ * The signed-in account as asserted by the identity provider. {@code email} is lower-cased. {@code platformAdmin}:
+ * Artemis administrator (realm role {@code artemis-admin}).
+ */
+public record Identity(String subject, String username, String name, String email, boolean emailVerified,
+		boolean platformAdmin) {
 
 	public Identity {
 		email = email == null ? null : email.strip().toLowerCase(Locale.ROOT);

@@ -6,7 +6,11 @@ import java.util.UUID;
 /** Organizations of the signed-in account: tenant resolution, creation, invitations addressed to it, leaving. */
 public interface MembershipService {
 
-	/** Resolves the organization a request targets; unknown slugs and non-members get the same 404. */
+	/**
+	 * Resolves the organization a request targets; unknown slugs and non-members get the same 404. Artemis
+	 * administrators who are not members get a fixed read-only view (viewer role, only {@code viewFindings}), which the
+	 * organization's editable role matrix cannot widen.
+	 */
 	Tenant resolve(String slug, Identity identity);
 
 	/** Local development without authentication: full access to any existing organization. */
