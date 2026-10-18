@@ -26,6 +26,10 @@ import tools.jackson.databind.json.JsonMapper;
 @Component
 class GeminiClient {
 
+	// Plain keys in the response schema; mapped to the language tags used in reports.
+	private static final String EN_KEY = "en";
+	private static final String PT_KEY = "pt";
+
 	private static final Logger log = LoggerFactory.getLogger(GeminiClient.class);
 	private static final int MAX_SUMMARY = 1200;
 	private static final int MAX_RECOMMENDATION = 500;
@@ -33,8 +37,8 @@ class GeminiClient {
 	private static final int MAX_RECOMMENDATIONS = 6;
 
 	private static final Map<String, Object> LOCALIZED = Map.of("type", "OBJECT",
-			"properties", Map.of(ReportTexts.EN, Map.of("type", "STRING"), ReportTexts.PT, Map.of("type", "STRING")),
-			"required", List.of(ReportTexts.EN, ReportTexts.PT));
+			"properties", Map.of(EN_KEY, Map.of("type", "STRING"), PT_KEY, Map.of("type", "STRING")),
+			"required", List.of(EN_KEY, PT_KEY));
 	private static final Map<String, Object> RESPONSE_SCHEMA = Map.of("type", "OBJECT",
 			"properties", Map.of("summary", LOCALIZED, "recommendations", Map.of("type", "ARRAY", "items", LOCALIZED)),
 			"required", List.of("summary", "recommendations"));
@@ -111,8 +115,8 @@ class GeminiClient {
 		if (localized == null) {
 			return null;
 		}
-		String en = cleanText(localized.get(ReportTexts.EN));
-		String pt = cleanText(localized.get(ReportTexts.PT));
+		String en = cleanText(localized.get(EN_KEY));
+		String pt = cleanText(localized.get(PT_KEY));
 		if (en == null || pt == null || en.length() > max || pt.length() > max) {
 			return null;
 		}
