@@ -2,6 +2,7 @@ package io.github.artemiscore.artemisappsec.report.service;
 
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -29,6 +30,7 @@ class GeminiClient {
 	// Plain keys in the response schema; mapped to the language tags used in reports.
 	private static final String EN_KEY = "en";
 	private static final String PT_KEY = "pt";
+	private static final int MAX_OUTPUT_TOKENS = 1024;
 
 	private static final Logger log = LoggerFactory.getLogger(GeminiClient.class);
 	private static final int MAX_SUMMARY = 1200;
@@ -57,6 +59,19 @@ class GeminiClient {
 		this.http = RestClient.builder().baseUrl(config.geminiBaseUrl()).requestFactory(factory).build();
 	}
 
+	/** Short answers and, on Flash models, no hidden "thinking" tokens: the report needs neither. */
+	private Map<String, Object> generationConfig() {
+		Map<String, Object> config = new LinkedHashMap<>();
+		config.put("temperature", 0.2);
+		config.put("maxOutputTokens", MAX_OUTPUT_TOKENS);
+		config.put("responseMimeType", "application/json");
+		config.put("responseSchema", RESPONSE_SCHEMA);
+		if (this.config.geminiModel().contains("flash")) {
+			config.put("thinkingConfig", Map.of("thinkingBudget", 0));
+		}
+		return config;
+	}
+
 	boolean configured() {
 		return config.enabled();
 	}
@@ -67,8 +82,7 @@ class GeminiClient {
 			Map<String, Object> body = Map.of(
 					"systemInstruction", Map.of("parts", List.of(Map.of("text", systemInstruction))),
 					"contents", List.of(Map.of("role", "user", "parts", List.of(Map.of("text", json.writeValueAsString(data))))),
-					"generationConfig", Map.of("temperature", 0.2, "responseMimeType", "application/json",
-							"responseSchema", RESPONSE_SCHEMA));
+					"generationConfig", generationConfig());
 			GenerateResponse response = http.post()
 				.uri("/v1beta/models/{model}:generateContent", config.geminiModel())
 				.header("x-goog-api-key", config.geminiApiKey())

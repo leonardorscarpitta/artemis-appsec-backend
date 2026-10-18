@@ -17,47 +17,60 @@ import io.github.artemiscore.artemisappsec.report.domain.ReportContent;
  */
 final class AiReportPayload {
 
-	private static final int MAX_TITLE = 160;
+	private static final int MAX_TITLE = 70;
+	private static final int MAX_RISKS = 8;
 
 	private AiReportPayload() {
 	}
 
+	/** Compact on purpose: every field costs tokens. */
 	static Map<String, Object> of(ReportFacts facts, Instant now) {
 		ReportContent c = facts.content();
 		Map<String, Object> payload = new LinkedHashMap<>();
-		payload.put("reportType", facts.type().code());
-		payload.put("periodDays", facts.periodDays());
-		payload.put("kpis", Map.of(
-				"detectedInPeriod", c.kpis().opened(),
-				"fixedInPeriod", c.kpis().fixed(),
-				"openNow", c.kpis().open(),
-				"meanTimeToRemediateDays", c.kpis().mttrDays(),
-				"slaCompliancePercent", c.kpis().slaCompliance()));
-		payload.put("openBySeverity", c.severity());
-		payload.put("openByKind", facts.openByKind());
-		payload.put("openPastSla", facts.overdue());
-		payload.put("owaspTop10_2021", c.owasp().stream()
-			.map(o -> Map.of("id", o.id(), "name", o.name(), "openFindings", o.findings()))
-			.toList());
-		payload.put("topRisks", facts.risks().stream().map(f -> risk(f, now)).toList());
+		payload.put("type", facts.type().code());
+		payload.put("days", facts.periodDays());
+		payload.put("detected", c.kpis().opened());
+		payload.put("fixed", c.kpis().fixed());
+		payload.put("open", c.kpis().open());
+		payload.put("mttrDays", Math.round(c.kpis().mttrDays() * 10) / 10.0);
+		payload.put("slaPct", c.kpis().slaCompliance());
+		payload.put("pastSla", facts.overdue());
+		payload.put("bySeverity", nonZero(c.severity()));
+		payload.put("byKind", nonZero(facts.openByKind()));
+		Map<String, Integer> owasp = new LinkedHashMap<>();
+		c.owasp().stream().filter(o -> o.findings() > 0).forEach(o -> owasp.put(o.id(), o.findings()));
+		payload.put("owasp", owasp);
+		payload.put("risks", facts.risks().stream().limit(MAX_RISKS).map(f -> risk(f, now)).toList());
 		return payload;
 	}
 
 	private static Map<String, Object> risk(FindingSummary f, Instant now) {
-		boolean secret = f.kind() == FindingKind.SECRET;
 		Map<String, Object> risk = new LinkedHashMap<>();
 		risk.put("id", f.cve() != null ? f.cve() : f.ruleId());
 		risk.put("kind", f.kind().wireValue());
-		risk.put("title", secret ? null : truncate(f.title()));
-		risk.put("severity", f.severity().wireValue());
+		if (f.kind() != FindingKind.SECRET) {
+			risk.put("title", truncate(f.title()));
+		}
+		risk.put("sev", f.severity().wireValue());
 		risk.put("cvss", f.cvss());
 		risk.put("cwe", f.cwe());
-		risk.put("package", f.packageName());
-		risk.put("installedVersion", f.installedVersion());
-		risk.put("fixedVersion", f.fixedVersion());
+		if (f.packageName() != null) {
+			risk.put("pkg", f.packageName() + (f.installedVersion() == null ? "" : "@" + f.installedVersion())
+					+ (f.fixedVersion() == null ? "" : "→" + f.fixedVersion()));
+		}
 		risk.put("ageDays", Duration.between(f.detectedAt(), now).toDays());
 		risk.values().removeIf(v -> v == null);
 		return risk;
+	}
+
+	private static <K> Map<K, ? extends Number> nonZero(Map<K, ? extends Number> counts) {
+		Map<K, Number> out = new LinkedHashMap<>();
+		counts.forEach((k, v) -> {
+			if (v != null && v.doubleValue() != 0) {
+				out.put(k, v);
+			}
+		});
+		return out;
 	}
 
 	private static String truncate(String s) {
@@ -65,14 +78,9 @@ final class AiReportPayload {
 	}
 
 	static final String SYSTEM_INSTRUCTION = """
-			You are an application security analyst writing a security report for the engineering team and its managers.
-			Use only the data provided in the user message (JSON). Never invent CVEs, packages, versions or numbers, and do not \
-			mention repositories, people or tools that are not in the data.
-			Write:
-			- summary: a concise executive summary of at most 120 words;
-			- recommendations: 3 to 6 prioritized, actionable recommendations, most urgent first, each one or two sentences, \
-			referencing the CVE or rule ids, packages and fixed versions from the data when relevant.
-			For a "compliance" report, frame the summary and recommendations by OWASP Top 10 2021 category.
-			Write every text in English (field "en") and in Brazilian Portuguese (field "pt") with the same meaning.
-			Plain text only: no markdown, no bullet characters, no headings.""";
+			AppSec analyst. From the JSON only (never invent CVEs, packages, versions or numbers), write:
+			summary: executive summary, max 80 words;
+			recommendations: 3-5, most urgent first, max 25 words each, citing ids, packages and fixed versions (pkg is name@installed→fixed).
+			Type "compliance": frame by OWASP 2021 category (owasp = category id → open findings).
+			Each text in English ("en") and Brazilian Portuguese ("pt"). Plain text, no markdown.""";
 }
