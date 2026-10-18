@@ -11,8 +11,9 @@ import io.github.artemiscore.artemisappsec.organization.domain.Role;
 import io.github.artemiscore.artemisappsec.shared.error.ApiProblemException;
 
 /**
- * The organization a request acts on and the caller's membership in it. {@code memberId} is null only when
- * authentication is disabled (local development). {@code actor} is the caller's username, for audit fields.
+ * The organization a request acts on and the caller's membership in it. {@code memberId} is null when
+ * authentication is disabled (local development) and for Artemis administrators viewing an organization they are not
+ * a member of (read-only, see {@link MembershipService#resolve}). {@code actor} is the caller's username, for audit fields.
  * {@code permissions} are the role's permissions in this organization.
  */
 public record Tenant(UUID organizationId, String slug, UUID memberId, Role role, String actor, Set<Permission> permissions) {

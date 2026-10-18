@@ -8,6 +8,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +24,8 @@ import io.github.artemiscore.artemisappsec.organization.persistence.Organization
 @Service
 @Transactional(readOnly = true)
 class PlatformAdminServiceImpl implements PlatformAdminService, OrganizationFeatures {
+
+	private static final Logger log = LoggerFactory.getLogger(PlatformAdminServiceImpl.class);
 
 	private final OrganizationRepository organizations;
 	private final MemberRepository members;
@@ -52,10 +56,32 @@ class PlatformAdminServiceImpl implements PlatformAdminService, OrganizationFeat
 	}
 
 	@Override
+	public AdminOrganizationView organization(String slug) {
+		return toView(find(slug));
+	}
+
+	@Override
+	@Transactional
+	public void deleteOrganization(String slug, String admin) {
+		Organization organization = find(slug);
+		// Same as the owner's deletion: every table references the organization with ON DELETE CASCADE.
+		organizations.delete(organization);
+		log.info("Artemis administrator {} deleted organization {}", admin, organization.getSlug());
+	}
+
+	@Override
 	@Transactional
 	public AdminOrganizationView updateFeatures(String slug, Set<Feature> requested, String admin) {
-		Organization organization = organizations.findBySlug(slug).orElseThrow(MembershipServiceImpl::organizationNotFound);
+		Organization organization = find(slug);
 		features.replace(organization.getId(), requested.isEmpty() ? EnumSet.noneOf(Feature.class) : EnumSet.copyOf(requested), admin);
+		return toView(organization);
+	}
+
+	private Organization find(String slug) {
+		return organizations.findBySlug(slug).orElseThrow(MembershipServiceImpl::organizationNotFound);
+	}
+
+	private AdminOrganizationView toView(Organization organization) {
 		return toView(organization, members.findByOrganizationIdOrderByCreatedAtAsc(organization.getId()).stream()
 			.filter(Member::isActive).toList(), enabledFor(organization.getId()),
 				repositories.repositoriesByOrganization().getOrDefault(organization.getId(), 0L));
