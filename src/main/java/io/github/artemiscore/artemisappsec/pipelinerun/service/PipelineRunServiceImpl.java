@@ -24,8 +24,8 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import io.github.artemiscore.artemisappsec.billing.domain.Feature;
-import io.github.artemiscore.artemisappsec.billing.service.BillingService;
+import io.github.artemiscore.artemisappsec.organization.domain.Feature;
+import io.github.artemiscore.artemisappsec.organization.service.OrganizationFeatures;
 import io.github.artemiscore.artemisappsec.pipelinerun.domain.PipelineRun;
 import io.github.artemiscore.artemisappsec.pipelinerun.domain.PipelineRun.StageSelection;
 import io.github.artemiscore.artemisappsec.pipelinerun.domain.RunStatus;
@@ -40,6 +40,7 @@ import io.github.artemiscore.artemisappsec.project.domain.AccessStatus;
 import io.github.artemiscore.artemisappsec.project.service.ProjectSummary;
 import io.github.artemiscore.artemisappsec.shared.error.BusinessRuleException;
 import io.github.artemiscore.artemisappsec.shared.error.ResourceNotFoundException;
+import io.github.artemiscore.artemisappsec.usage.service.UsageService;
 
 @Service
 @Transactional(readOnly = true)
@@ -54,15 +55,18 @@ class PipelineRunServiceImpl implements PipelineRunService {
 
 	private final PipelineRunRepository runs;
 	private final ProjectService projects;
-	private final BillingService billing;
+	private final UsageService usage;
+	private final OrganizationFeatures features;
 	private final RunQuota quota;
 	private final Clock clock;
 
-	PipelineRunServiceImpl(PipelineRunRepository runs, ProjectService projects, BillingService billing, RunQuota quota) {
+	PipelineRunServiceImpl(PipelineRunRepository runs, ProjectService projects, UsageService usage, OrganizationFeatures features,
+			RunQuota quota) {
 		this.runs = runs;
 		this.quota = quota;
 		this.projects = projects;
-		this.billing = billing;
+		this.usage = usage;
+		this.features = features;
 		this.clock = Clock.systemUTC();
 	}
 
@@ -145,7 +149,7 @@ class PipelineRunServiceImpl implements PipelineRunService {
 				.formatted(project.name()));
 		}
 		requireVerifiedAccess(project);
-		LocalDate quotaMonth = billing.consumeScan(organizationId);
+		LocalDate quotaMonth = usage.consumeScan(organizationId);
 		List<StageSelection> stages = enabledStages(organizationId, project.name());
 		// Folders removed from the repository since then are dropped; none left means all of them.
 		List<String> current = project.folders().stream().map(f -> f.path()).toList();
@@ -167,7 +171,7 @@ class PipelineRunServiceImpl implements PipelineRunService {
 	@Override
 	@Transactional
 	public Optional<RunDetails> queueScheduledScan(UUID organizationId, String repository) {
-		if (!billing.isEntitled(organizationId, Feature.SCHEDULED_SCANS)) {
+		if (!features.isEnabled(organizationId, Feature.SCHEDULED_SCANS)) {
 			return Optional.empty();
 		}
 		ProjectSummary project = projects.getByName(organizationId, repository).project();
@@ -179,7 +183,7 @@ class PipelineRunServiceImpl implements PipelineRunService {
 
 	private RunDetails queue(UUID organizationId, ProjectSummary project, RunTrigger trigger, String actor,
 			List<String> folders) {
-		LocalDate quotaMonth = billing.consumeScan(organizationId);
+		LocalDate quotaMonth = usage.consumeScan(organizationId);
 		List<StageSelection> stages = enabledStages(organizationId, project.name());
 		PipelineRun run = PipelineRun.queued(runs.nextNumber(), project.id(), project.branch(), PENDING_COMMIT,
 				PENDING_MESSAGE, trigger, actor, stages, folders);
@@ -299,7 +303,7 @@ class PipelineRunServiceImpl implements PipelineRunService {
 	/** A run that ended before the runner reported any stage gives its monthly scan back. */
 	private void refundIfNotScanned(PipelineRun run) {
 		quota.release(run.getId()).ifPresent(month -> {
-			projects.findById(run.getProjectId()).ifPresent(p -> billing.refundScan(p.organizationId(), month));
+			projects.findById(run.getProjectId()).ifPresent(p -> usage.refundScan(p.organizationId(), month));
 			run.markQuotaRefunded();
 		});
 	}

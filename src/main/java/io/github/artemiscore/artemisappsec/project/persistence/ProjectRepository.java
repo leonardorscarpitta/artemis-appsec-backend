@@ -39,4 +39,13 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
 	Optional<Project> findByIdAndOrganizationIdAndDeletedAtIsNotNull(UUID id, UUID organizationId);
 
 	boolean existsByOrganizationIdAndNameAndDeletedAtIsNull(UUID organizationId, String name);
+
+	@Query("select p.organizationId as organizationId, count(p) as total from Project p where p.deletedAt is null group by p.organizationId")
+	List<OrganizationCount> countActiveByOrganization();
+
+	interface OrganizationCount {
+		UUID getOrganizationId();
+
+		long getTotal();
+	}
 }

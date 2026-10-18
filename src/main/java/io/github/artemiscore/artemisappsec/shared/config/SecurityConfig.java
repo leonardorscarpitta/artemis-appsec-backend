@@ -1,6 +1,8 @@
 package io.github.artemiscore.artemisappsec.shared.config;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,6 +13,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -31,8 +34,11 @@ public class SecurityConfig {
 
 	private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
 
-	private static final String[] PUBLIC_PATHS = { "/actuator/health/**", "/actuator/info", "/api/docs/**",
-			"/api/v1/billing/plans" };
+	private static final String[] PUBLIC_PATHS = { "/actuator/health/**", "/actuator/info", "/api/docs/**" };
+
+	/** Keycloak realm role of the Artemis administrators; it grants no organization membership. */
+	public static final String PLATFORM_ADMIN_ROLE = "artemis-admin";
+	public static final String PLATFORM_ADMIN_AUTHORITY = "ROLE_ARTEMIS_ADMIN";
 
 	/** Everything except {@code /internal/**}, which has its own chain (see {@code scanjob.api.InternalApiSecurityConfig}). */
 	@Bean
@@ -52,6 +58,7 @@ public class SecurityConfig {
 		http.authorizeHttpRequests(auth -> auth
 				.requestMatchers(PUBLIC_PATHS).permitAll()
 				.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+				.requestMatchers("/api/v1/admin/**").hasAuthority(PLATFORM_ADMIN_AUTHORITY)
 				.anyRequest().authenticated())
 			.oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
 		return http.build();
@@ -75,13 +82,21 @@ public class SecurityConfig {
 
 	/**
 	 * Uses the human-readable username as principal. Authorization is per organization (membership roles, see
-	 * {@code organization.api.TenantInterceptor}), so tokens carry no authorities.
+	 * {@code organization.api.TenantInterceptor}); the only authority is the platform administrator realm role.
 	 */
 	private static JwtAuthenticationConverter jwtAuthenticationConverter() {
 		JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
 		converter.setPrincipalClaimName("preferred_username");
-		converter.setJwtGrantedAuthoritiesConverter(jwt -> List.<GrantedAuthority>of());
+		converter.setJwtGrantedAuthoritiesConverter(jwt -> isPlatformAdmin(jwt)
+				? List.<GrantedAuthority>of(new SimpleGrantedAuthority(PLATFORM_ADMIN_AUTHORITY))
+				: List.of());
 		return converter;
+	}
+
+	public static boolean isPlatformAdmin(Jwt jwt) {
+		Map<String, Object> realmAccess = jwt.getClaimAsMap("realm_access");
+		return realmAccess != null && realmAccess.get("roles") instanceof Collection<?> roles
+				&& roles.contains(PLATFORM_ADMIN_ROLE);
 	}
 
 	@Bean

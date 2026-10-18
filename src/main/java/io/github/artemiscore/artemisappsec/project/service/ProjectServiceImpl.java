@@ -14,8 +14,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import io.github.artemiscore.artemisappsec.billing.domain.Feature;
-import io.github.artemiscore.artemisappsec.billing.service.BillingService;
+import io.github.artemiscore.artemisappsec.organization.domain.Feature;
+import io.github.artemiscore.artemisappsec.organization.service.OrganizationFeatures;
 import io.github.artemiscore.artemisappsec.project.domain.AccessCheck;
 import io.github.artemiscore.artemisappsec.project.domain.AccessCheckStatus;
 import io.github.artemiscore.artemisappsec.project.domain.AccessStatus;
@@ -46,13 +46,13 @@ class ProjectServiceImpl implements ProjectService {
 	private final AccessCheckRepository checks;
 	private final RepositoryKeys keys;
 	private final ObjectProvider<PipelinePolicy> pipelinePolicy;
-	private final BillingService billing;
+	private final OrganizationFeatures features;
 
 	ProjectServiceImpl(ProjectRepository projects, ObjectProvider<ProjectFindingStats> findingStats,
 			ApplicationEventPublisher events, AccessCheckRepository checks, RepositoryKeys keys,
-			ObjectProvider<PipelinePolicy> pipelinePolicy, BillingService billing) {
+			ObjectProvider<PipelinePolicy> pipelinePolicy, OrganizationFeatures features) {
 		this.pipelinePolicy = pipelinePolicy;
-		this.billing = billing;
+		this.features = features;
 		this.projects = projects;
 		this.findingStats = findingStats;
 		this.events = events;
@@ -275,11 +275,12 @@ class ProjectServiceImpl implements ProjectService {
 				fingerprint, pinned, lastCheck);
 	}
 
-	/** Choosing a schedule other than manual needs the PRO plan; keeping an existing one (now inactive) is allowed. */
+	/** Choosing a timed schedule needs the feature to be enabled; keeping an existing one (now inactive) is allowed. */
 	private void requireSchedulePlan(UUID organizationId, ScanSchedule current, ScanSchedule requested) {
 		if (requested != current && requested != ScanSchedule.MANUAL
-				&& !billing.isEntitled(organizationId, Feature.SCHEDULED_SCANS)) {
-			throw new ApiProblemException(HttpStatus.FORBIDDEN, "plan-required", "Scheduled scans need the PRO plan",
+				&& !features.isEnabled(organizationId, Feature.SCHEDULED_SCANS)) {
+			throw new ApiProblemException(HttpStatus.FORBIDDEN, "feature-not-enabled",
+					"Scheduled scans are not enabled for this organization; ask the Artemis administrators",
 					Map.of("feature", Feature.SCHEDULED_SCANS.code()));
 		}
 	}

@@ -6,6 +6,7 @@ import java.time.DateTimeException;
 import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -13,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.github.artemiscore.artemisappsec.organization.domain.Feature;
 import io.github.artemiscore.artemisappsec.organization.domain.NotificationRule;
 import io.github.artemiscore.artemisappsec.organization.domain.Organization;
 import io.github.artemiscore.artemisappsec.organization.domain.OrganizationSettings;
@@ -28,13 +30,13 @@ class OrganizationSettingsServiceImpl implements OrganizationSettingsService {
 
 	private final OrganizationSettingsRepository settings;
 	private final OrganizationRepository organizations;
-	private final PlanLookup plans;
+	private final OrganizationFeatures features;
 
 	OrganizationSettingsServiceImpl(OrganizationSettingsRepository settings, OrganizationRepository organizations,
-			PlanLookup plans) {
+			OrganizationFeatures features) {
 		this.settings = settings;
 		this.organizations = organizations;
-		this.plans = plans;
+		this.features = features;
 	}
 
 	@Override
@@ -54,9 +56,10 @@ class OrganizationSettingsServiceImpl implements OrganizationSettingsService {
 		Organization organization = organization(organizationId);
 		String name = general.name().strip();
 		if (!organization.getName().equals(name)) {
-			if (!plans.canRename(organizationId)) {
-				throw new ApiProblemException(HttpStatus.FORBIDDEN, "plan-required",
-						"Renaming the organization is available on the PRO plan");
+			if (!features.isEnabled(organizationId, Feature.ORGANIZATION_RENAME)) {
+				throw new ApiProblemException(HttpStatus.FORBIDDEN, "feature-not-enabled",
+						"Renaming is not enabled for this organization; ask the Artemis administrators",
+						Map.of("feature", Feature.ORGANIZATION_RENAME.code()));
 			}
 			String slug = Slugs.fromName(name);
 			if (!organization.getSlug().equals(slug)) {
