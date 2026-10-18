@@ -95,6 +95,37 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "artemisappsec-admin-api",
+      "name": "Artemis API (user administration)",
+      "description": "Service account the Artemis API uses to list and delete accounts for platform administrators",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${ARTEMISAPPSEC_ADMIN_CLIENT_SECRET}",
+      "protocol": "openid-connect",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "frontchannelLogout": false,
+      "attributes": {
+        "oauth2.device.authorization.grant.enabled": "false",
+        "oidc.ciba.grant.enabled": "false"
+      },
+      "defaultClientScopes": ["basic"],
+      "optionalClientScopes": []
+    }
+  ],
+  "users": [
+    {
+      "username": "service-account-artemisappsec-admin-api",
+      "enabled": true,
+      "serviceAccountClientId": "artemisappsec-admin-api",
+      "clientRoles": {
+        "realm-management": ["view-users", "query-users", "manage-users"]
+      }
     }
   ]
 }
