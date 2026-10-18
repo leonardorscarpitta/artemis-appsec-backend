@@ -70,6 +70,6 @@ artemisappsec:
   # AI-written report summaries for organizations with the AI feature (Claude API; disabled without a key).
   ai:
     anthropic-api-key: ${ANTHROPIC_API_KEY:}
-    model: ${ANTHROPIC_MODEL:claude-opus-5-5}
+    model: ${ANTHROPIC_MODEL:claude-haiku-5-5}
     timeout-seconds: ${AI_TIMEOUT_SECONDS:60}
     reports-per-day: ${AI_REPORTS_PER_DAY:10}
