@@ -18,6 +18,7 @@ import io.github.artemiscore.artemisappsec.report.domain.ReportContent;
 import io.github.artemiscore.artemisappsec.report.domain.ReportContent.AiNotice;
 import io.github.artemiscore.artemisappsec.report.domain.ReportContent.Narrative;
 import io.github.artemiscore.artemisappsec.report.persistence.ReportRepository;
+import io.github.artemiscore.artemisappsec.shared.ai.ClaudeClient;
 import io.github.artemiscore.artemisappsec.shared.config.ArtemisAppSecProperties;
 
 /**
@@ -57,8 +58,10 @@ class ReportNarrator {
 		}
 		// Only the organization's default language is written, to avoid paying for a translation nobody reads.
 		String language = settings.get(report.getOrganizationId()).general().defaultLanguage();
-		Optional<ClaudeClient.AiText> ai = claude.write(AiReportPayload.SYSTEM_INSTRUCTION,
-				AiReportPayload.of(facts, Instant.now(clock), language));
+		Optional<AiReportPayload.AiText> ai = claude
+			.json(AiReportPayload.SYSTEM_INSTRUCTION, AiReportPayload.of(facts, Instant.now(clock), language),
+					AiReportPayload.RESPONSE_SCHEMA, AiReportPayload.MAX_TOKENS, AiReportPayload.AiText.class)
+			.flatMap(AiReportPayload::validated);
 		return ai.map(t -> with(facts, Map.of(language, t.summary()),
 				t.recommendations().stream().map(r -> Map.of(language, r)).toList(), Narrative.AI, null))
 			.orElseGet(() -> standard(facts, AiNotice.UNAVAILABLE));
