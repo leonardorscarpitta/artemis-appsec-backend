@@ -132,6 +132,7 @@ All environment-specific values come from environment variables (secrets in prod
 | `SCANNER_TOKEN` | Shared secret of the scanner runner (≥ 32 random characters; the internal job API is disabled otherwise). Also `SCANNER_STAGE_TIMEOUT_SECONDS` (600), `SCANNER_MAX_REPO_SIZE_MB` (500), `SCANNER_STALE_RUN_MINUTES` (60) |
 | `SCANNER_RUN_TIMEOUT_SECONDS` | Wall-clock limit for one whole scan run in the runner (default 3600) |
 | `DEPLOY_KEY_ENCRYPTION_KEY`, `DEPLOY_KEY_ENCRYPTION_KEY_ID` | Master key (base64 of 32 random bytes, `openssl rand -base64 32`) and its label (`v1`) for encrypting the private deploy keys of private repositories. Without a valid key, private repositories are disabled (`503 deploy-keys-disabled`) |
+| `KEYCLOAK_ADMIN_API_CLIENT_SECRET` | Secret (≥ 32 characters, `openssl rand -hex 32`) of the confidential client `artemisappsec-admin-api` used for user management; also fed to the realm import. Without it the `/admin/users` endpoints answer `503 user-management-disabled`. Also `KEYCLOAK_ADMIN_API_URL` (internal Keycloak URL, `http://keycloak:8080` in Docker), `KEYCLOAK_ADMIN_API_REALM` (`artemisappsec`), `KEYCLOAK_ADMIN_API_CLIENT_ID` (`artemisappsec-admin-api`) |
 
 ## Architecture
 
@@ -235,6 +236,23 @@ Artemis is free; there are no plans or payments. Three optional features are ena
 - **Platform administrator** = Keycloak realm role `artemis-admin` (in the realm import; the default `roles` client scope puts it in the access token's `realm_access.roles`). Grant it with `kcadm.sh add-roles -r artemisappsec --uusername <user> --rolename artemis-admin` (inside the Keycloak container, after `kcadm.sh config credentials …`); the user must sign in again to get a new token. For realms imported before the role existed, create it first: `kcadm.sh create roles -r artemisappsec -s name=artemis-admin`.
 - `GET /api/v1/admin/organizations` → `[{slug, name, createdAt, ownerName, memberCount, repositoryCount, features}]`, `GET /api/v1/admin/organizations/{slug}` → one entry, `PUT /api/v1/admin/organizations/{slug}/features` `{"features": [...]}` → the updated entry (`granted_by` = the admin's username) and `DELETE /api/v1/admin/organizations/{slug}` → `204` (same cascade as the owner's `DELETE /organization`: repositories, deploy keys, findings, runs, reports, members, invitations, settings, features, usage; logged at INFO with the admin's username and the slug). No organization header; `403` without the role.
 - **Read-only view of every organization:** the role grants **no membership**, but an administrator who is not a member of an organization resolves there as a fixed viewer — role `viewer`, permissions exactly `["viewFindings"]`, no member row (`memberId` null) — so every `GET` works (repositories, findings, runs, reports, dashboard, CSV export, team without e-mail addresses) and every write answers `403` `forbidden`. The organization's editable viewer row does not apply, so owners cannot widen it. If the administrator is also a member, the membership role wins.
+- **Users:** `GET /api/v1/admin/users?search=&first=0&max=100` (`max` ≤ 200; `search` matches username, name and e-mail in Keycloak) → `{users: [{id, username, name, email, createdAt, enabled, platformAdmin, organizations: [{slug, name, role}]}], total}`. `id` is the Keycloak user id (`sub`); organizations come from the active `member` rows linked to it (`user_subject`); accounts without organizations are included. `DELETE /api/v1/admin/users/{id}` → `204`: removes every `member` row of the account, then deletes the Keycloak account (which ends its sessions); invitations it sent stay. Refused with `409`: `cannot-delete-self`, `platform-admin` (remove the `artemis-admin` role in Keycloak first) and `owns-organizations` (with `organizations: [slugs]`; delete those organizations or have the owner transfer ownership first). Unknown id → `404`. Logged at INFO with the admin's username, the user id and username (no e-mail). The user can register again later (as a new account).
+- **Keycloak Admin API access:** the API calls Keycloak's Admin REST API with a client-credentials token (cached until 30 s before expiry) of the confidential client **`artemisappsec-admin-api`** (no browser, password or device flows; service account only) whose service account has exactly the `realm-management` roles `view-users`, `query-users` and `manage-users` (it can't change realm settings or grant roles). Platform-admin status is read per user from `users/{id}/role-mappings/realm/composite`. Missing secret → `503 user-management-disabled`; Keycloak unreachable or credentials rejected → `503 user-directory-unavailable` (details in the API log). The realm import creates the client on a fresh Keycloak (secret = `KEYCLOAK_ADMIN_API_CLIENT_SECRET`); `./keycloak/create-dev-users.sh` creates it on an existing dev realm (writing a generated secret to `.env` when empty). By hand, inside the Keycloak container:
+  ```sh
+  docker compose exec keycloak sh -c '
+    k=/opt/keycloak/bin/kcadm.sh
+    $k config credentials --server http://localhost:8080 --realm master --user "$KC_BOOTSTRAP_ADMIN_USERNAME" --password "$KC_BOOTSTRAP_ADMIN_PASSWORD"
+    $k create clients -r artemisappsec -s clientId=artemisappsec-admin-api -s "name=Artemis API (user administration)" \
+      -s enabled=true -s publicClient=false -s clientAuthenticatorType=client-secret -s serviceAccountsEnabled=true \
+      -s standardFlowEnabled=false -s implicitFlowEnabled=false -s directAccessGrantsEnabled=false -s frontchannelLogout=false
+    $k add-roles -r artemisappsec --uusername service-account-artemisappsec-admin-api --cclientid realm-management \
+      --rolename view-users --rolename query-users --rolename manage-users
+    CID=$($k get clients -r artemisappsec -q clientId=artemisappsec-admin-api --fields id --format csv --noquotes)
+    $k get clients/$CID/client-secret -r artemisappsec          # read the generated secret ("value")
+    # or set your own: $k update clients/$CID -r artemisappsec -s secret=<openssl rand -hex 32>
+    # or rotate:       $k create clients/$CID/client-secret -r artemisappsec'
+  ```
+  Put the secret in `KEYCLOAK_ADMIN_API_CLIENT_SECRET` (secrets manager in production) and recreate the API (`docker compose up -d api`).
 
 ### Scheduled scans (optional feature)
 
