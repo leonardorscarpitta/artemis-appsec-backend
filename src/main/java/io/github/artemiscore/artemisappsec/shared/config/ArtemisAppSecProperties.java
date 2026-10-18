@@ -9,25 +9,22 @@ public record ArtemisAppSecProperties(Security security, Cors cors, Scanner scan
 		KeycloakAdmin keycloakAdmin, Ai ai) {
 
 	/**
-	 * AI-written report narratives (Google Gemini API).
+	 * AI-written report narratives (Claude API).
 	 *
-	 * @param geminiApiKey AI is disabled when blank
+	 * @param anthropicApiKey AI is disabled when blank
 	 * @param reportsPerDay AI-written reports per organization per UTC day; later ones use the standard texts
 	 */
-	public record Ai(String geminiApiKey, String geminiModel, int geminiTimeoutSeconds, String geminiBaseUrl,
-			int reportsPerDay) {
+	public record Ai(String anthropicApiKey, String model, int timeoutSeconds, int reportsPerDay) {
 
 		public Ai {
-			geminiApiKey = geminiApiKey == null ? "" : geminiApiKey.strip();
-			geminiModel = geminiModel == null || geminiModel.isBlank() ? "gemini-2.5-flash" : geminiModel.strip();
-			geminiTimeoutSeconds = geminiTimeoutSeconds > 0 ? geminiTimeoutSeconds : 30;
-			geminiBaseUrl = geminiBaseUrl == null || geminiBaseUrl.isBlank() ? "https://generativelanguage.googleapis.com"
-					: geminiBaseUrl.strip().replaceAll("/+$", "");
+			anthropicApiKey = anthropicApiKey == null ? "" : anthropicApiKey.strip();
+			model = model == null || model.isBlank() ? "claude-opus-5-5" : model.strip();
+			timeoutSeconds = timeoutSeconds > 0 ? timeoutSeconds : 60;
 			reportsPerDay = reportsPerDay >= 0 ? reportsPerDay : 10;
 		}
 
 		public boolean enabled() {
-			return !geminiApiKey.isEmpty();
+			return !anthropicApiKey.isEmpty();
 		}
 	}
 

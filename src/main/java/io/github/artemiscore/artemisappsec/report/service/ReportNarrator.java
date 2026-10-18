@@ -27,15 +27,15 @@ import io.github.artemiscore.artemisappsec.shared.config.ArtemisAppSecProperties
 class ReportNarrator {
 
 	private final OrganizationFeatures features;
-	private final GeminiClient gemini;
+	private final ClaudeClient claude;
 	private final ReportRepository reports;
 	private final int aiReportsPerDay;
 	private final Clock clock = Clock.systemUTC();
 
-	ReportNarrator(OrganizationFeatures features, GeminiClient gemini, ReportRepository reports,
+	ReportNarrator(OrganizationFeatures features, ClaudeClient claude, ReportRepository reports,
 			ArtemisAppSecProperties properties) {
 		this.features = features;
-		this.gemini = gemini;
+		this.claude = claude;
 		this.reports = reports;
 		this.aiReportsPerDay = properties.ai().reportsPerDay();
 	}
@@ -44,7 +44,7 @@ class ReportNarrator {
 		if (!features.isEnabled(report.getOrganizationId(), Feature.AI_TRIAGE)) {
 			return standard(facts, null);
 		}
-		if (!gemini.configured()) {
+		if (!claude.configured()) {
 			return standard(facts, AiNotice.UNAVAILABLE);
 		}
 		Instant today = LocalDate.now(clock).atStartOfDay(ZoneOffset.UTC).toInstant();
@@ -52,7 +52,7 @@ class ReportNarrator {
 				>= aiReportsPerDay) {
 			return standard(facts, AiNotice.LIMIT);
 		}
-		Optional<GeminiClient.AiText> ai = gemini.write(AiReportPayload.SYSTEM_INSTRUCTION,
+		Optional<ClaudeClient.AiText> ai = claude.write(AiReportPayload.SYSTEM_INSTRUCTION,
 				AiReportPayload.of(facts, Instant.now(clock)));
 		return ai.map(t -> with(facts, t.summary(), t.recommendations(), Narrative.AI, null))
 			.orElseGet(() -> standard(facts, AiNotice.UNAVAILABLE));

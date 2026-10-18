@@ -67,10 +67,9 @@ artemisappsec:
     realm: ${KEYCLOAK_ADMIN_API_REALM:artemisappsec}
     client-id: ${KEYCLOAK_ADMIN_API_CLIENT_ID:artemisappsec-admin-api}
     client-secret: ${KEYCLOAK_ADMIN_API_CLIENT_SECRET:}
-  # AI-written report summaries for organizations with the AI feature (Google Gemini API; disabled without a key).
+  # AI-written report summaries for organizations with the AI feature (Claude API; disabled without a key).
   ai:
-    gemini-api-key: ${GEMINI_API_KEY:}
-    gemini-model: ${GEMINI_MODEL:gemini-2.5-flash}
-    gemini-timeout-seconds: ${GEMINI_TIMEOUT_SECONDS:30}
-    gemini-base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
+    anthropic-api-key: ${ANTHROPIC_API_KEY:}
+    model: ${ANTHROPIC_MODEL:claude-opus-5-5}
+    timeout-seconds: ${AI_TIMEOUT_SECONDS:60}
     reports-per-day: ${AI_REPORTS_PER_DAY:10}
