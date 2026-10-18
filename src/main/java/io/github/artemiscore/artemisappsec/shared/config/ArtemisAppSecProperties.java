@@ -18,7 +18,7 @@ public record ArtemisAppSecProperties(Security security, Cors cors, Scanner scan
 
 		public Ai {
 			anthropicApiKey = anthropicApiKey == null ? "" : anthropicApiKey.strip();
-			model = model == null || model.isBlank() ? "claude-opus-5-5" : model.strip();
+			model = model == null || model.isBlank() ? "claude-haiku-5-5" : model.strip();
 			timeoutSeconds = timeoutSeconds > 0 ? timeoutSeconds : 60;
 			reportsPerDay = reportsPerDay >= 0 ? reportsPerDay : 10;
 		}
