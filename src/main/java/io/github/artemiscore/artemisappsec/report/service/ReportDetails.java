@@ -15,6 +15,6 @@ public record ReportDetails(ReportSummary report, Content content) {
 
 	public record Content(String summary, Kpis kpis, List<TrendPoint> trend, Map<String, Integer> severity,
 			List<TopRisk> topRisks, List<OwaspCategory> owasp, List<String> recommendations, Narrative narrative,
-			AiNotice aiNotice) {
+			AiNotice aiNotice, String textLanguage) {
 	}
 }

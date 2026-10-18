@@ -24,9 +24,10 @@ final class AiReportPayload {
 	}
 
 	/** Compact on purpose: every field costs tokens. */
-	static Map<String, Object> of(ReportFacts facts, Instant now) {
+	static Map<String, Object> of(ReportFacts facts, Instant now, String language) {
 		ReportContent c = facts.content();
 		Map<String, Object> payload = new LinkedHashMap<>();
+		payload.put("lang", language);
 		payload.put("type", facts.type().code());
 		payload.put("days", facts.periodDays());
 		payload.put("detected", c.kpis().opened());
@@ -82,5 +83,5 @@ final class AiReportPayload {
 			summary: executive summary, max 80 words;
 			recommendations: 3-5, most urgent first, max 25 words each, citing ids, packages and fixed versions (pkg is name@installed→fixed).
 			Type "compliance": frame by OWASP 2021 category (owasp = category id → open findings).
-			Each text in English ("en") and Brazilian Portuguese ("pt"). Plain text, no markdown.""";
+			Write in the language of "lang" (en-US English, pt-BR Brazilian Portuguese). Plain text, no markdown.""";
 }

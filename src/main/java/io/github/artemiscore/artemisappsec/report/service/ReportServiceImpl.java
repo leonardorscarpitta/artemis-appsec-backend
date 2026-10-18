@@ -107,12 +107,16 @@ class ReportServiceImpl implements ReportService {
 			return null;
 		}
 		Function<Map<String, String>, String> text = m -> localized(m, locale);
+		String preferred = "pt".equals(locale.getLanguage()) ? PT : EN;
+		// AI texts exist only in the organization's language: say so when the reader uses another one.
+		String textLanguage = c.summary().containsKey(preferred) ? null : c.summary().keySet().stream().findFirst().orElse(null);
 		return new ReportDetails.Content(text.apply(c.summary()), c.kpis(), c.trend(), c.severity(), c.topRisks(), c.owasp(),
-				c.recommendations().stream().map(text).toList(), c.narrative(), c.aiNotice());
+				c.recommendations().stream().map(text).toList(), c.narrative(), c.aiNotice(), textLanguage);
 	}
 
 	private static String localized(Map<String, String> texts, Locale locale) {
 		String preferred = "pt".equals(locale.getLanguage()) ? PT : EN;
-		return texts.getOrDefault(preferred, texts.get(EN));
+		String text = texts.getOrDefault(preferred, texts.get(EN));
+		return text != null ? text : texts.values().stream().findFirst().orElse(null);
 	}
 }

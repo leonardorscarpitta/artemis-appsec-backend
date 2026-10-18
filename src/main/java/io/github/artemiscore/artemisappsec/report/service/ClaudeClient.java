@@ -31,10 +31,7 @@ import tools.jackson.databind.json.JsonMapper;
 @Component
 class ClaudeClient {
 
-	// Plain keys in the response schema; mapped to the language tags used in reports.
-	private static final String EN_KEY = "en";
-	private static final String PT_KEY = "pt";
-	private static final long MAX_TOKENS = 2048;
+	private static final long MAX_TOKENS = 1024;
 
 	private static final Logger log = LoggerFactory.getLogger(ClaudeClient.class);
 	private static final int MAX_SUMMARY = 1200;
@@ -42,11 +39,9 @@ class ClaudeClient {
 	private static final int MIN_RECOMMENDATIONS = 1;
 	private static final int MAX_RECOMMENDATIONS = 6;
 
-	private static final Map<String, Object> LOCALIZED = Map.of("type", "object",
-			"properties", Map.of(EN_KEY, Map.of("type", "string"), PT_KEY, Map.of("type", "string")),
-			"required", List.of(EN_KEY, PT_KEY), "additionalProperties", false);
+	private static final Map<String, Object> TEXT = Map.of("type", "string");
 	private static final Map<String, Object> RESPONSE_SCHEMA = Map.of("type", "object",
-			"properties", Map.of("summary", LOCALIZED, "recommendations", Map.of("type", "array", "items", LOCALIZED)),
+			"properties", Map.of("summary", TEXT, "recommendations", Map.of("type", "array", "items", TEXT)),
 			"required", List.of("summary", "recommendations"), "additionalProperties", false);
 
 	private final ArtemisAppSecProperties.Ai config;
@@ -127,8 +122,8 @@ class ClaudeClient {
 				|| text.recommendations().size() < MIN_RECOMMENDATIONS) {
 			return Optional.empty();
 		}
-		Map<String, String> summary = clean(text.summary(), MAX_SUMMARY);
-		List<Map<String, String>> recs = text.recommendations().stream()
+		String summary = clean(text.summary(), MAX_SUMMARY);
+		List<String> recs = text.recommendations().stream()
 			.limit(MAX_RECOMMENDATIONS)
 			.map(r -> clean(r, MAX_RECOMMENDATION))
 			.toList();
@@ -138,28 +133,16 @@ class ClaudeClient {
 		return Optional.of(new AiText(summary, recs));
 	}
 
-	/** Both languages present, within {@code max} characters, without control characters or markdown emphasis. */
-	private static Map<String, String> clean(Map<String, String> localized, int max) {
-		if (localized == null) {
-			return null;
-		}
-		String en = cleanText(localized.get(EN_KEY));
-		String pt = cleanText(localized.get(PT_KEY));
-		if (en == null || pt == null || en.length() > max || pt.length() > max) {
-			return null;
-		}
-		return Map.of(ReportTexts.EN, en, ReportTexts.PT, pt);
-	}
-
-	private static String cleanText(String s) {
+	/** Within {@code max} characters, without control characters or markdown emphasis; null when unusable. */
+	private static String clean(String s, int max) {
 		if (s == null) {
 			return null;
 		}
 		String cleaned = s.replaceAll("[\\p{Cntrl}&&[^\\n]]", " ").replace("**", "").replace("`", "").strip();
-		return cleaned.isEmpty() ? null : cleaned;
+		return cleaned.isEmpty() || cleaned.length() > max ? null : cleaned;
 	}
 
 	@JsonIgnoreProperties(ignoreUnknown = true)
-	record AiText(Map<String, String> summary, List<Map<String, String>> recommendations) {
+	record AiText(String summary, List<String> recommendations) {
 	}
 }
