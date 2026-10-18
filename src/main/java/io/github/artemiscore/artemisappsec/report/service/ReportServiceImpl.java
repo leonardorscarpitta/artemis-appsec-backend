@@ -9,6 +9,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,16 +17,18 @@ import io.github.artemiscore.artemisappsec.project.service.ProjectService;
 import io.github.artemiscore.artemisappsec.project.service.ProjectSummary;
 import io.github.artemiscore.artemisappsec.report.domain.Report;
 import io.github.artemiscore.artemisappsec.report.domain.ReportContent;
+import io.github.artemiscore.artemisappsec.report.domain.ReportStatus;
 import io.github.artemiscore.artemisappsec.report.domain.ReportType;
 import io.github.artemiscore.artemisappsec.report.persistence.ReportRepository;
+import io.github.artemiscore.artemisappsec.shared.error.ApiProblemException;
 import io.github.artemiscore.artemisappsec.shared.error.ResourceNotFoundException;
 
 @Service
 @Transactional(readOnly = true)
 class ReportServiceImpl implements ReportService {
 
-	private static final String EN = "en-US";
-	private static final String PT = "pt-BR";
+	private static final String EN = ReportTexts.EN;
+	private static final String PT = ReportTexts.PT;
 
 	private static final Map<ReportType, Map<String, String>> TYPE_TITLES = Map.of(
 			ReportType.SUMMARY, Map.of(EN, "Security summary", PT, "Resumo de segurança"),
@@ -66,6 +69,18 @@ class ReportServiceImpl implements ReportService {
 		return toSummary(report, projectNames(organizationId), locale);
 	}
 
+	@Override
+	@Transactional
+	public ReportSummary retry(UUID organizationId, UUID id, Locale locale) {
+		Report report = reports.findByIdAndOrganizationId(id, organizationId)
+			.orElseThrow(() -> new ResourceNotFoundException("Report", id));
+		if (report.getStatus() != ReportStatus.FAILED) {
+			throw new ApiProblemException(HttpStatus.CONFLICT, "report-not-failed", "Only failed reports can be retried");
+		}
+		report.retry();
+		return toSummary(report, projectNames(organizationId), locale);
+	}
+
 	private UUID projectId(UUID organizationId, String name) {
 		try {
 			return projects.getByName(organizationId, name).project().id();
@@ -83,7 +98,8 @@ class ReportServiceImpl implements ReportService {
 	private static ReportSummary toSummary(Report r, Map<UUID, String> names, Locale locale) {
 		String scope = r.getProjectId() == null ? null : names.get(r.getProjectId());
 		return new ReportSummary(r.getId(), localized(r.getTitle(), locale), r.getType(), scope, r.getPeriodStart(),
-				r.getPeriodEnd(), r.getGeneratedAt(), r.getGeneratedBy(), r.getStatus());
+				r.getPeriodEnd(), r.getGeneratedAt(), r.getGeneratedBy(), r.getStatus(), r.getError(),
+				r.getContent() == null ? null : r.getContent().narrative());
 	}
 
 	private static ReportDetails.Content toContent(ReportContent c, Locale locale) {
@@ -92,7 +108,7 @@ class ReportServiceImpl implements ReportService {
 		}
 		Function<Map<String, String>, String> text = m -> localized(m, locale);
 		return new ReportDetails.Content(text.apply(c.summary()), c.kpis(), c.trend(), c.severity(), c.topRisks(), c.owasp(),
-				c.recommendations().stream().map(text).toList());
+				c.recommendations().stream().map(text).toList(), c.narrative(), c.aiNotice());
 	}
 
 	private static String localized(Map<String, String> texts, Locale locale) {
