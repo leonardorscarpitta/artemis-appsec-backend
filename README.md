@@ -25,7 +25,8 @@ Backend of Artemis, a SAST platform. The frontend lives in the [artemis-appsec-f
 Everything runs in Docker:
 
 ```sh
-cp .env.example .env             # first time only; set passwords and SCANNER_TOKEN
+cp .env.example .env             # first time only; set passwords, SCANNER_TOKEN and KEYCLOAK_ADMIN_API_CLIENT_SECRET
+                                 # (openssl rand -hex 32 each; compose refuses to start without the Keycloak secret)
 docker compose up -d
 ./keycloak/create-dev-users.sh   # first time only (once Keycloak is up); prints the development logins
 ```
@@ -256,6 +257,18 @@ Artemis is free; there are no plans or payments. Three optional features are ena
     # or rotate:       $k create clients/$CID/client-secret -r artemisappsec'
   ```
   Put the secret in `KEYCLOAK_ADMIN_API_CLIENT_SECRET` (secrets manager in production) and recreate the API (`docker compose up -d api`).
+  **Empty secret:** Keycloak accepts an empty client secret, so a realm imported while `KEYCLOAK_ADMIN_API_CLIENT_SECRET` was empty lets anyone obtain the service account's token with `client_secret=`. `docker-compose.yml` now refuses to start without the variable. To fix a realm imported that way, re-run `./keycloak/create-dev-users.sh` (it sets the client secret from `.env` through stdin, not on the command line) or by hand:
+  ```sh
+  set -a; . ./.env; set +a
+  printf '{"secret":"%s"}' "$KEYCLOAK_ADMIN_API_CLIENT_SECRET" | docker compose exec -T keycloak sh -c '
+    k=/opt/keycloak/bin/kcadm.sh
+    $k config credentials --server http://localhost:8080 --realm master --user "$KC_BOOTSTRAP_ADMIN_USERNAME" --password "$KC_BOOTSTRAP_ADMIN_PASSWORD" </dev/null
+    CID=$($k get clients -r artemisappsec -q clientId=artemisappsec-admin-api --fields id --format csv --noquotes </dev/null)
+    $k update clients/$CID -r artemisappsec -f -'
+  # must print 401:
+  curl -sk -o /dev/null -w '%{http_code}\n' -d grant_type=client_credentials -d client_id=artemisappsec-admin-api -d client_secret= \
+    https://auth.artemisappsec.localhost:9443/realms/artemisappsec/protocol/openid-connect/token
+  ```
 
 ### Scheduled scans (optional feature)
 

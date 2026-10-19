@@ -24,7 +24,14 @@
   "ssoSessionMaxLifespan": 36000,
   "revokeRefreshToken": true,
   "refreshTokenMaxReuse": 0,
-  "organizationsEnabled": true,
+  "organizationsEnabled": false,
+  "eventsEnabled": true,
+  "eventsExpiration": 7776000,
+  "adminEventsEnabled": true,
+  "adminEventsDetailsEnabled": false,
+  "attributes": {
+    "adminEventsExpiration": "7776000"
+  },
   "internationalizationEnabled": true,
   "supportedLocales": ["en", "pt-BR"],
   "defaultLocale": "en",
@@ -77,7 +84,8 @@
       "webOrigins": ["${ARTEMISAPPSEC_WEB_ORIGIN}"],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "${ARTEMISAPPSEC_WEB_ORIGIN}/*"
+        "post.logout.redirect.uris": "${ARTEMISAPPSEC_WEB_ORIGIN}/*",
+        "use.refresh.tokens": "false"
       },
       "defaultClientScopes": ["web-origins", "acr", "basic", "profile", "email", "roles"],
       "optionalClientScopes": [],

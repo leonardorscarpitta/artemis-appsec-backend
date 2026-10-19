@@ -87,7 +87,7 @@ services:
       JAVA_OPTS_KC_HEAP: -XX:MaxRAMPercentage=60
       # Placeholders used by the realm import
       ARTEMISAPPSEC_WEB_ORIGIN: ${ARTEMISAPPSEC_WEB_ORIGIN:-http://localhost:4200}
-      ARTEMISAPPSEC_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_API_CLIENT_SECRET:-}
+      ARTEMISAPPSEC_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_API_CLIENT_SECRET:?set KEYCLOAK_ADMIN_API_CLIENT_SECRET in .env (openssl rand -hex 32)}
       KC_SMTP_HOST: ${KC_SMTP_HOST:-mailpit}
       KC_SMTP_PORT: ${KC_SMTP_PORT:-1025}
       KC_SMTP_FROM: ${KC_SMTP_FROM:-no-reply@artemisappsec.localhost}
