@@ -24,4 +24,9 @@ public interface AccessCheckRepository extends JpaRepository<AccessCheck, UUID> 
 	Optional<AccessCheck> findFirstByProjectIdAndStatusIn(UUID projectId, Collection<AccessCheckStatus> statuses);
 
 	List<AccessCheck> findByStatusAndStartedAtBefore(AccessCheckStatus status, Instant startedBefore);
+
+	@Query(value = """
+			SELECT count(*) FROM repository_access_check c JOIN project p ON p.id = c.project_id
+			WHERE p.organization_id = :organizationId AND c.requested_at > :since""", nativeQuery = true)
+	long countForOrganizationSince(UUID organizationId, Instant since);
 }
