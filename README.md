@@ -33,7 +33,7 @@ docker compose up -d
 | Service | URL |
 | --- | --- |
 | API | http://localhost:8080/api/v1 |
-| OpenAPI / Swagger UI | http://localhost:8080/api/docs/ui |
+| OpenAPI / Swagger UI | http://localhost:8080/api/docs/ui (dev profile only; elsewhere off unless `API_DOCS_ENABLED=true`) |
 | Health | http://localhost:8080/actuator/health |
 | Keycloak (sign-in, registration, account) | https://auth.artemisappsec.localhost:9443/realms/artemisappsec/account |
 | Keycloak admin console | https://auth.artemisappsec.localhost:9443/admin (`KEYCLOAK_ADMIN_*` in `.env`) |
@@ -127,6 +127,7 @@ All environment-specific values come from environment variables (secrets in prod
 | `AUTH_PUBLIC_URL`, `ARTEMISAPPSEC_WEB_ORIGIN` | Keycloak public URL (`--hostname`) and the frontend origin (redirect/CORS in the realm) |
 | `KEYCLOAK_ADMIN_USERNAME`, `KEYCLOAK_ADMIN_PASSWORD`, `KEYCLOAK_DB_PASSWORD` | Keycloak bootstrap admin and database credentials |
 | `KC_SMTP_HOST`, `KC_SMTP_PORT`, `KC_SMTP_FROM` | Outgoing e-mail for password reset (Mailpit by default) |
+| `API_DOCS_ENABLED` | `true` to serve the OpenAPI document and Swagger UI under `/api/docs` outside the `dev` profile (default `false`: 404) |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated origins allowed to call `/api/**` |
 | `SERVER_TOMCAT_REMOTEIP_INTERNAL_PROXIES` | Optional regex of the reverse proxies whose `X-Forwarded-*` headers are trusted (`forward-headers-strategy: native`; default: Tomcat's loopback and private ranges). Clients connecting directly cannot spoof forwarded headers |
 | `SCANNER_TOKEN` | Shared secret of the scanner runner (≥ 32 random characters; the internal job API is disabled otherwise). Also `SCANNER_STAGE_TIMEOUT_SECONDS` (600), `SCANNER_MAX_REPO_SIZE_MB` (500), `SCANNER_STALE_RUN_MINUTES` (60) |
