@@ -180,11 +180,22 @@ class MembershipServiceImpl implements MembershipService {
 
 	@Override
 	public OrganizationMembership acceptInvitationLink(String token, Identity identity) {
-		Invitation invitation = invitations.findByTokenHash(Invitation.hashToken(token))
+		return join(invitationByToken(token), identity, true);
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public InvitationPreview previewInvitationLink(String token) {
+		Invitation invitation = invitationByToken(token);
+		Organization organization = organizations.findById(invitation.getOrganizationId()).orElseThrow();
+		return new InvitationPreview(organization.getName(), organization.getSlug(), invitation.getRole());
+	}
+
+	private Invitation invitationByToken(String token) {
+		return invitations.findByTokenHash(Invitation.hashToken(token))
 			.filter(i -> !i.isExpired(Instant.now()))
 			.orElseThrow(() -> new ApiProblemException(HttpStatus.NOT_FOUND, "invitation-not-found",
 					"This invitation link is invalid or has expired"));
-		return join(invitation, identity, true);
 	}
 
 	private OrganizationMembership join(Invitation invitation, Identity identity, boolean failIfMember) {
