@@ -1,5 +1,6 @@
 package io.github.artemiscore.artemisappsec.organization.service;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -9,9 +10,12 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -41,6 +45,10 @@ class MembershipServiceImpl implements MembershipService {
 
 	private static final String WEB_CLIENT_ID = "artemisappsec-web";
 
+	private static final Logger log = LoggerFactory.getLogger(MembershipServiceImpl.class);
+	private static final Duration ADMIN_VIEW_LOG_INTERVAL = Duration.ofHours(1);
+
+	private final Map<String, Instant> adminViews = new ConcurrentHashMap<>();
 	private final OrganizationRepository organizations;
 	private final MemberRepository members;
 	private final InvitationRepository invitations;
@@ -73,6 +81,7 @@ class MembershipServiceImpl implements MembershipService {
 		Organization organization = organizations.findBySlug(slug).orElseThrow(MembershipServiceImpl::organizationNotFound);
 		Optional<Member> membership = findMember(organization.getId(), identity).filter(Member::isActive);
 		if (membership.isEmpty() && identity.platformAdmin()) {
+			recordAdminView(identity, organization);
 			return new Tenant(organization.getId(), organization.getSlug(), null, Role.VIEWER, identity.username(),
 					EnumSet.of(Permission.VIEW_FINDINGS));
 		}
@@ -80,6 +89,17 @@ class MembershipServiceImpl implements MembershipService {
 		member.seen(Instant.now());
 		return new Tenant(organization.getId(), organization.getSlug(), member.getId(), member.getRole(), identity.username(),
 				rolePermissions.permissionsOf(organization.getId(), member.getRole()));
+	}
+
+	private void recordAdminView(Identity identity, Organization organization) {
+		Instant now = Instant.now();
+		String key = identity.username() + "|" + organization.getSlug();
+		Instant last = adminViews.get(key);
+		if (last == null || last.isBefore(now.minus(ADMIN_VIEW_LOG_INTERVAL))) {
+			adminViews.put(key, now);
+			adminViews.values().removeIf(at -> at.isBefore(now.minus(ADMIN_VIEW_LOG_INTERVAL)));
+			log.info("Artemis administrator {} opened organization {} read-only", identity.username(), organization.getSlug());
+		}
 	}
 
 	@Override
