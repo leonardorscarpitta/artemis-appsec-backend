@@ -26,6 +26,9 @@ public interface PipelineRunService {
 
 	RunDetails cancel(UUID organizationId, long number);
 
+	/** The SBOM stored for {@code folder} (empty = whole repository) of a run of the organization; 404 when there is none. */
+	SbomFile sbom(UUID organizationId, long number, String folder);
+
 	/** Cancels the queued and running runs of a repository (it was removed); returns how many. */
 	int cancelActive(UUID projectId);
 
@@ -49,6 +52,9 @@ public interface PipelineRunService {
 	void recordSource(UUID runId, String commitSha, String commitMessage);
 
 	StageStatus recordStage(UUID runId, StageResult result);
+
+	/** Stores (or replaces) the SBOM of one scanned folder of a running run; the folder must be one the run scans. */
+	void storeSbom(UUID runId, String folder, byte[] gzipped, int sizeBytes, int components);
 
 	void complete(UUID runId);
 

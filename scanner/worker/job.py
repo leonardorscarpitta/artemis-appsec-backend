@@ -4,7 +4,7 @@ import shutil
 import time
 from pathlib import Path
 
-from .api import ApiClient
+from .api import ApiClient, ApiError
 from .clone import CloneRefused, SshSession, clone, keyscan, known_hosts_for, ls_remote, validate_ssh_url
 from .config import Config
 from .detect import detect
@@ -17,6 +17,8 @@ log = logging.getLogger("artemis.runner")
 # Stack detection only reads manifests, so it gets a smaller clone than a scan (access checks are cheap to request).
 DETECT_TIMEOUT_SECONDS = 120
 DETECT_MAX_REPO_MB = 200
+# Must match the API's limit for stored SBOMs.
+MAX_SBOM_BYTES = 20 * 1024 * 1024
 
 
 def process(job: dict, api: ApiClient, config: Config) -> None:
@@ -77,6 +79,17 @@ def process(job: dict, api: ApiClient, config: Config) -> None:
                 return skipped(stage, out_of_time)
             return run_stage(stage["id"], stage.get("tool", ""), target, work, max(1, budget()), **extra)
 
+        def sbom_part(stage: dict, target: Path, folder: str) -> dict:
+            """Runs Syft on one folder and stores its SBOM with the run; storing is best effort."""
+            path = work / "sbom.cdx.json"
+            try:
+                result = run_part(stage, target, keep_artifact=path)
+                if path.is_file():
+                    result["log"] += "\n" + store_sbom(api, run_id, folder, path)
+                return result
+            finally:
+                path.unlink(missing_ok=True)
+
         failed_stage = None
         timed_out = False
         for stage in job.get("stages", []):
@@ -89,6 +102,9 @@ def process(job: dict, api: ApiClient, config: Config) -> None:
                 continue
             if stage["id"] == "image":
                 result = run_part(stage, src, image=repo.get("image"))
+            elif stage["id"] == "sbom":
+                parts = [(folder, sbom_part(stage, target, folder)) for folder, target in targets or [("", src)]]
+                result = merge(parts) if targets else parts[0][1]
             elif targets:
                 result = merge([(folder, run_part(stage, target)) for folder, target in targets])
             else:
@@ -161,6 +177,19 @@ def open_ssh_session(work: Path, url: str, credentials: dict | None) -> SshSessi
     target = validate_ssh_url(url)
     known_hosts = known_hosts_for(target, credentials.get("knownHosts"))
     return SshSession(work / "ssh", credentials["sshPrivateKey"], known_hosts)
+
+
+def store_sbom(api: ApiClient, run_id: str, folder: str, path: Path) -> str:
+    """Uploads the SBOM; returns the stage log line. A failure never fails the stage."""
+    size = path.stat().st_size
+    if size > MAX_SBOM_BYTES:
+        return f"SBOM too large to store: {size / (1024 * 1024):.1f} MB (limit {MAX_SBOM_BYTES // (1024 * 1024)} MB)"
+    try:
+        api.sbom(run_id, folder, path)
+    except (ApiError, OSError) as error:
+        log.warning("run %s: SBOM upload failed (%s)", run_id, error)
+        return f"Warning: the SBOM could not be stored ({error})"
+    return "SBOM stored with this run (download it from the run page)"
 
 
 def merge(parts: list[tuple[str, dict]]) -> dict:

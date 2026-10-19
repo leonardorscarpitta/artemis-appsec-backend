@@ -20,6 +20,7 @@ class ToolError(Exception):
 class ToolResult:
     findings: list[dict] = field(default_factory=list)
     log: str = ""
+    artifact: Path | None = None  # a file the job may keep (the SBOM); deleted with the stage output otherwise
 
 
 def tool_env(extra: dict | None = None) -> dict:

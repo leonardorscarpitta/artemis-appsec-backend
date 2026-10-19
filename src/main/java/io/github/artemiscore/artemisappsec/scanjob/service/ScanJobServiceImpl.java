@@ -1,8 +1,12 @@
 package io.github.artemiscore.artemisappsec.scanjob.service;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.zip.GZIPOutputStream;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +30,10 @@ import io.github.artemiscore.artemisappsec.project.service.ProjectSummary;
 import io.github.artemiscore.artemisappsec.shared.config.ArtemisAppSecProperties;
 import io.github.artemiscore.artemisappsec.shared.domain.Stage;
 import io.github.artemiscore.artemisappsec.shared.error.BusinessRuleException;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.JsonParser;
+import tools.jackson.core.JsonToken;
+import tools.jackson.databind.json.JsonMapper;
 
 @Service
 class ScanJobServiceImpl implements ScanJobService {
@@ -40,6 +48,7 @@ class ScanJobServiceImpl implements ScanJobService {
 	private final FindingService findings;
 	private final ProjectService projects;
 	private final ArtemisAppSecProperties.Scanner scanner;
+	private final JsonMapper json = JsonMapper.builder().build();
 
 	ScanJobServiceImpl(PipelineRunService runs, FindingService findings, ProjectService projects,
 			ArtemisAppSecProperties properties) {
@@ -150,6 +159,70 @@ class ScanJobServiceImpl implements ScanJobService {
 		return runs.recordStage(runId, new StageResult(stage, assignment.tool(), report.status(), report.durationSeconds(),
 				Text.clean(report.log(), MAX_LOG_CHARS), ingestion.reported(), ingestion.highestSeverity(),
 				ingestion.newFindings()));
+	}
+
+	@Override
+	@Transactional
+	public int recordSbom(UUID runId, String folder, byte[] content) {
+		RunJob job = runs.job(runId);
+		if (job.status() != RunStatus.RUNNING) {
+			throw new BusinessRuleException("Run #%d is %s; SBOMs are no longer accepted"
+				.formatted(job.number(), job.status().wireValue()));
+		}
+		if (job.pendingStages().stream().noneMatch(s -> s.id() == Stage.SBOM)) {
+			throw new BusinessRuleException("Stage sbom of run #%d is not pending".formatted(job.number()));
+		}
+		int components = countCycloneDxComponents(content);
+		runs.storeSbom(runId, folder, gzip(content), content.length, components);
+		return components;
+	}
+
+	/** Streams the document (no tree in memory): it must be a JSON object with {@code "bomFormat": "CycloneDX"}. */
+	private int countCycloneDxComponents(byte[] content) {
+		String format = null;
+		int components = 0;
+		try (JsonParser parser = json.createParser(content)) {
+			if (parser.nextToken() != JsonToken.START_OBJECT) {
+				throw new IllegalArgumentException("The SBOM must be a JSON object");
+			}
+			while (parser.nextToken() == JsonToken.PROPERTY_NAME) {
+				String name = parser.currentName();
+				JsonToken value = parser.nextToken();
+				if ("bomFormat".equals(name) && value == JsonToken.VALUE_STRING) {
+					format = parser.getString();
+				}
+				else if ("components".equals(name) && value == JsonToken.START_ARRAY) {
+					while (parser.nextToken() != JsonToken.END_ARRAY) {
+						components++;
+						parser.skipChildren();
+					}
+				}
+				else {
+					parser.skipChildren();
+				}
+			}
+			if (parser.nextToken() != null) {
+				throw new IllegalArgumentException("Unexpected content after the SBOM document");
+			}
+		}
+		catch (JacksonException e) {
+			throw new IllegalArgumentException("The SBOM is not valid JSON");
+		}
+		if (!"CycloneDX".equals(format)) {
+			throw new IllegalArgumentException("The SBOM must be a CycloneDX document (bomFormat \"CycloneDX\")");
+		}
+		return components;
+	}
+
+	private static byte[] gzip(byte[] content) {
+		ByteArrayOutputStream out = new ByteArrayOutputStream(Math.max(1024, content.length / 8));
+		try (GZIPOutputStream zip = new GZIPOutputStream(out)) {
+			zip.write(content);
+		}
+		catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
+		return out.toByteArray();
 	}
 
 	@Override
