@@ -94,12 +94,19 @@ def licenses(src: Path, out: Path, timeout: int) -> ToolResult:
             if category not in ("forbidden", "restricted", "reciprocal"):
                 continue
             name = lic.get("Name") or "unknown"
-            pkg = lic.get("PkgName") or lic.get("FilePath") or "unknown"
+            # Never use the file path as a name: it is repository content and ends up in titles and AI prompts.
+            pkg = lic.get("PkgName")
+            if pkg:
+                title = f"{name} license in {pkg}"
+                description = f"{pkg} is distributed under {name} ({category}). Check it against your license policy."
+            else:
+                title = f"{name} license in a repository file"
+                description = (f"A file in this repository is distributed under {name} ({category}). "
+                               "Check it against your license policy.")
             findings.append(finding(
-                "license", f"license:{name}", f"{name} license in {pkg}",
-                f"{pkg} is distributed under {name} ({category}). Check it against your license policy.",
+                "license", f"license:{name}", title, description,
                 severity(lic.get("Severity")),
-                package={"name": pkg, "version": "unknown", "fixedVersion": None, "ecosystem": "license"},
+                package={"name": pkg or "unknown", "version": "unknown", "fixedVersion": None, "ecosystem": "license"},
                 location=location(lic.get("FilePath"), None),
             ))
     return ToolResult(findings, summary("Trivy", findings))

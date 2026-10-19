@@ -16,8 +16,9 @@ import io.github.artemiscore.artemisappsec.shared.ai.ClaudeClient;
 
 /**
  * The only data Artemis sends to the AI provider to write a report: aggregated figures and the top risks described
- * by public identifiers (CVE or rule id, CWE, package and versions). It never contains source code, file paths,
- * secret values or matches, repository or organization names, people, keys or logs. Keep it that way: this is what
+ * by public identifiers (CVE or rule id, CWE, package and versions that look like identifiers; no titles for secrets
+ * or licenses). It never contains source code, file paths, secret values or matches, free text taken from the
+ * repository, repository or organization names, people, keys or logs. Keep it that way: this is what
  * the Privacy Policy describes.
  */
 final class AiReportPayload {
@@ -65,15 +66,14 @@ final class AiReportPayload {
 		Map<String, Object> risk = new LinkedHashMap<>();
 		risk.put("id", f.cve() != null ? f.cve() : f.ruleId());
 		risk.put("kind", f.kind().wireValue());
-		if (f.kind() != FindingKind.SECRET) {
+		if (f.kind() != FindingKind.SECRET && f.kind() != FindingKind.LICENSE) {
 			risk.put("title", truncate(f.title()));
 		}
 		risk.put("sev", f.severity().wireValue());
 		risk.put("cvss", f.cvss());
 		risk.put("cwe", f.cwe());
 		if (f.packageName() != null) {
-			risk.put("pkg", f.packageName() + (f.installedVersion() == null ? "" : "@" + f.installedVersion())
-					+ (f.fixedVersion() == null ? "" : "→" + f.fixedVersion()));
+			risk.put("pkg", ClaudeClient.packageRef(f.packageName(), f.installedVersion(), f.fixedVersion()));
 		}
 		risk.put("ageDays", Duration.between(f.detectedAt(), now).toDays());
 		risk.values().removeIf(v -> v == null);
