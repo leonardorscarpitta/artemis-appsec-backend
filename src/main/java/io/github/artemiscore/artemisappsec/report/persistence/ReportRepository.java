@@ -22,6 +22,4 @@ public interface ReportRepository extends JpaRepository<Report, UUID> {
 			WHERE status = 'GENERATING' AND (started_at IS NULL OR started_at < :stuckBefore)
 			ORDER BY generated_at LIMIT 1 FOR UPDATE SKIP LOCKED""", nativeQuery = true)
 	Optional<Report> lockNextToGenerate(Instant stuckBefore);
-
-	long countByOrganizationIdAndAiUsedTrueAndGeneratedAtGreaterThanEqual(UUID organizationId, Instant since);
 }

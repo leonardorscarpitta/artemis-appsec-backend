@@ -4,6 +4,8 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,6 +36,8 @@ public class ClaudeClient {
 	private final ArtemisAppSecProperties.Ai config;
 	private final AnthropicClient client;
 	private final JsonMapper json = JsonMapper.builder().build();
+	/** At most this many AI calls at once across the server, so slow answers cannot hold every request thread. */
+	private final Semaphore slots = new Semaphore(4);
 
 	ClaudeClient(ArtemisAppSecProperties properties) {
 		this.config = properties.ai();
@@ -41,13 +45,28 @@ public class ClaudeClient {
 				? AnthropicOkHttpClient.builder()
 					.apiKey(config.anthropicApiKey())
 					.timeout(Duration.ofSeconds(config.timeoutSeconds()))
-					.maxRetries(1)
+					.maxRetries(0)
 					.build()
 				: null;
 	}
 
 	public boolean configured() {
 		return client != null;
+	}
+
+	/** Takes a call slot, waiting up to {@code wait}; callers that get one must {@link #release()} it. */
+	public boolean tryAcquire(Duration wait) {
+		try {
+			return slots.tryAcquire(wait.toMillis(), TimeUnit.MILLISECONDS);
+		}
+		catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			return false;
+		}
+	}
+
+	public void release() {
+		slots.release();
 	}
 
 	public String model() {
