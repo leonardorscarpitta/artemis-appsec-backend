@@ -39,7 +39,7 @@ docker compose up -d
 | Keycloak (sign-in, registration, account) | https://auth.artemisappsec.localhost:9443/realms/artemisappsec/account |
 | Keycloak admin console | https://auth.artemisappsec.localhost:9443/admin (`KEYCLOAK_ADMIN_*` in `.env`) |
 | Mailpit (dev e-mails) | http://localhost:8025 |
-| Remote debugger (JDWP) | `localhost:5005` |
+| Remote debugger (JDWP) | `localhost:5005` (host only; the scanner reaches the API through `api-gateway`, never the debug port) |
 | PostgreSQL | `localhost:5432` |
 
 Every port is published on **127.0.0.1 only** (the dev stack has weak defaults and JDWP has no authentication); nothing is reachable from the network.
@@ -58,7 +58,7 @@ docker compose start api
 
 Production image: `docker build -t artemisappsec-api .` (multi-stage, non-root, layered jar).
 
-**Memory limits** (the stack is sized for a 16 GB machine, ~4.5 GB in total): `db` 512 MB, `api` 1.5 GB (Maven `-Xmx384m`, application JVM `-Xmx640m -XX:+UseSerialGC`), `keycloak` 768 MB, `mailpit` 64 MB, `auth-proxy` 64 MB, `scanner` 2 GB (+ 2 CPUs, 512 processes).
+**Memory limits** (the stack is sized for a 16 GB machine, ~4.5 GB in total): `db` 512 MB, `api` 1.5 GB (Maven `-Xmx384m`, application JVM `-Xmx640m -XX:+UseSerialGC`), `keycloak` 768 MB, `mailpit` 64 MB, `auth-proxy` 64 MB, `api-gateway` 64 MB, `scanner` 2 GB (+ 2 CPUs, 512 processes).
 
 ## Authentication (Keycloak)
 
@@ -215,7 +215,7 @@ Licensing (see `scanner/THIRD_PARTY_NOTICES.md`, shipped in the image with every
 **Security and privacy measures**
 
 - *Supply chain:* pinned tool versions; every download verified against a pinned SHA-256 (cross-checked with the official checksum files where published); multi-stage build, no build tools in the final image.
-- *Sandbox:* non-root user (uid 10001), read-only root filesystem, all Linux capabilities dropped, `no-new-privileges`, memory/CPU/process limits, no Docker socket, no database credentials. The `scanner` network is shared only with the API — the database and Keycloak are unreachable.
+- *Sandbox:* non-root user (uid 10001), read-only root filesystem, all Linux capabilities dropped, `no-new-privileges`, memory/CPU/process limits, no Docker socket, no database credentials. The `scanner` network is shared only with `api-gateway` (Caddy forwarding port 8080 to the API, `ARTEMIS_API_URL=http://api-gateway:8080`) — the API container itself (with its unauthenticated JDWP debug port 5005), the database and Keycloak are unreachable.
 - *Process hygiene:* the worker reads `SCANNER_TOKEN` once, removes it from its environment and marks itself non-dumpable (`prctl(PR_SET_DUMPABLE, 0)`), so a tool compromised by a crafted repository (same uid) cannot read the token or decrypted deploy keys from `/proc/<pid>/environ` or memory. Every tool runs in its own process group that is killed as a whole on timeout; leftover processes are reaped between jobs (the worker is PID 1 — no `init`, which would keep the token readable in its own environment). One wall-clock budget per run, `SCANNER_RUN_TIMEOUT_SECONDS` (default 3600), caps all stages and folders together: when it runs out, the remaining stages are reported as skipped and the run fails.
 - *Untrusted repository config:* Gitleaks would read `.gitleaks.toml`/`.gitleaksignore` from the scanned tree, so they are deleted from the run's copy first (a repository cannot switch secret detection off). Trivy downloads remote Terraform modules while evaluating IaC and ignores `--offline-scan`/proxy settings for it (verified), which would let a repository make the runner request internal URLs; before the IaC stage every Terraform module `source` that is not a local `./`/`../` path is pointed at a missing local path, and `trivy config` runs with `--skip-check-update --tf-exclude-downloaded-modules`. `trivy image` gets `--` before the reference. The local `scan --dir` mode scans a copy of the directory.
 - *Clone:* **SSH only**, with the repository's Artemis-generated read-only deploy key (see "Private repositories") — public repositories too, so every scan proves the user was granted access by the repository's owner. Jobs for non-SSH repositories are refused by both the API and the runner (the runner's local `scan --url` dev mode can still clone public HTTPS). Credentials in URLs and hosts resolving to private, loopback, link-local or metadata addresses are refused; `--depth 1 --single-branch --no-tags`, no submodules, hooks, LFS, symlinks or redirects; size limit (500 MB) and timeouts. No repository code is ever executed (no installs, no builds).
