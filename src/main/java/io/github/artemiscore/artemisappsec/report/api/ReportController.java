@@ -51,4 +51,10 @@ class ReportController {
 		ReportSummary created = reports.request(tenant.organizationId(), command, locale);
 		return ResponseEntity.accepted().location(URI.create("/api/v1/reports/" + created.id())).body(created);
 	}
+
+	@PostMapping("/{id}/retry")
+	@RequiresPermission(Permission.TRIAGE)
+	ResponseEntity<ReportSummary> retry(Tenant tenant, @PathVariable UUID id, Locale locale) {
+		return ResponseEntity.accepted().body(reports.retry(tenant.organizationId(), id, locale));
+	}
 }

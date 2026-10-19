@@ -3,7 +3,7 @@ package io.github.artemiscore.artemisappsec.report.domain;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 public enum ReportStatus {
-	GENERATING, READY;
+	GENERATING, READY, FAILED;
 
 	@JsonValue
 	public String wireValue() {

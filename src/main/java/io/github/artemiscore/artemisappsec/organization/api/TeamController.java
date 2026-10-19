@@ -106,9 +106,12 @@ class TeamController {
 		return team.roles(tenant);
 	}
 
-	/** Owners and admins only (checked by role in the service); every role keeps viewFindings, billing is owner-only. */
+	/**
+	 * Owners and admins with the team permission only; admins can grant only permissions their own role has. Every role
+	 * keeps viewFindings, billing is owner-only.
+	 */
 	@PutMapping("/roles/{role}/permissions")
-	@RequiresPermission(Permission.VIEW_FINDINGS)
+	@RequiresPermission(Permission.TEAM)
 	RoleView updateRolePermissions(Tenant tenant, @PathVariable Role role, @Valid @RequestBody RolePermissionsRequest request) {
 		return team.updateRolePermissions(tenant, role, request.permissions());
 	}

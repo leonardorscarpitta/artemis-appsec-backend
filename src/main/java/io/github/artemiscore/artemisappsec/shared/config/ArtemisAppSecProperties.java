@@ -6,7 +6,29 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "artemisappsec")
 public record ArtemisAppSecProperties(Security security, Cors cors, Scanner scanner, DeployKeys deployKeys,
-		KeycloakAdmin keycloakAdmin) {
+		KeycloakAdmin keycloakAdmin, Ai ai) {
+
+	/**
+	 * AI-written report narratives and finding explanations (Claude API).
+	 *
+	 * @param anthropicApiKey AI is disabled when blank
+	 * @param reportsPerDay AI-written reports per organization per UTC day; later ones use the standard texts
+	 * @param insightsPerDay newly generated finding explanations per organization per UTC day (cached ones are free)
+	 */
+	public record Ai(String anthropicApiKey, String model, int timeoutSeconds, int reportsPerDay, int insightsPerDay) {
+
+		public Ai {
+			anthropicApiKey = anthropicApiKey == null ? "" : anthropicApiKey.strip();
+			model = model == null || model.isBlank() ? "claude-haiku-5-5" : model.strip();
+			timeoutSeconds = timeoutSeconds > 0 ? timeoutSeconds : 60;
+			reportsPerDay = reportsPerDay >= 0 ? reportsPerDay : 10;
+			insightsPerDay = insightsPerDay >= 0 ? insightsPerDay : 50;
+		}
+
+		public boolean enabled() {
+			return !anthropicApiKey.isEmpty();
+		}
+	}
 
 	/**
 	 * Keycloak Admin REST API access for user management (confidential client with a service account).

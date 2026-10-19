@@ -31,11 +31,14 @@ class PlatformUserServiceImpl implements PlatformUserService {
 	private final KeycloakAdminClient keycloak;
 	private final MemberRepository members;
 	private final OrganizationRepository organizations;
+	private final DeletedAccounts deletedAccounts;
 
-	PlatformUserServiceImpl(KeycloakAdminClient keycloak, MemberRepository members, OrganizationRepository organizations) {
+	PlatformUserServiceImpl(KeycloakAdminClient keycloak, MemberRepository members, OrganizationRepository organizations,
+			DeletedAccounts deletedAccounts) {
 		this.keycloak = keycloak;
 		this.members = members;
 		this.organizations = organizations;
+		this.deletedAccounts = deletedAccounts;
 	}
 
 	@Override
@@ -76,6 +79,7 @@ class PlatformUserServiceImpl implements PlatformUserService {
 		members.deleteByUserSubject(id);
 		// Last, so a failure here rolls the membership removal back.
 		keycloak.deleteUser(id);
+		deletedAccounts.add(id);
 		log.info("Artemis administrator {} deleted user {} ({})", admin, id, user.username());
 	}
 

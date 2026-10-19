@@ -7,6 +7,12 @@ spring:
   jpa:
     show-sql: false
 
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+
 logging:
   level:
     io.github.artemiscore.artemisappsec: DEBUG
