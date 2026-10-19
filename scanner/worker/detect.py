@@ -7,6 +7,8 @@ from pathlib import Path
 MAX_DEPTH = 3
 MAX_FOLDERS = 20
 MAX_READ_BYTES = 512 * 1024
+# Total read per folder for Python manifests (a folder may hold many requirements*.txt files).
+MAX_PYTHON_BYTES = 2 * 1024 * 1024
 SKIP_DIRS = {"node_modules", "vendor", ".venv", "venv", "dist", "build", "target", "out", "coverage", "__pycache__"}
 FOLDER_PATH = re.compile(r"^[\w.-]+(/[\w.-]+)*$")
 PYTHON_MANIFESTS = ("pyproject.toml", "Pipfile", "setup.py", "setup.cfg")
@@ -50,7 +52,14 @@ def _stack_of(directory: Path, files: set[str]) -> str | None:
             return "Java + Spring"
     python = [f for f in files if f in PYTHON_MANIFESTS or (f.startswith("requirements") and f.endswith(".txt"))]
     if python:
-        text = " ".join(_read(directory / f).lower() for f in sorted(python))
+        parts, total = [], 0
+        for f in sorted(python):
+            if total >= MAX_PYTHON_BYTES:
+                break
+            part = _read(directory / f)[:MAX_PYTHON_BYTES - total]
+            total += len(part)
+            parts.append(part.lower())
+        text = " ".join(parts)
         for name, stack in PYTHON_FRAMEWORKS:
             if re.search(rf"(?<![\w-]){name}(?![\w-])", text):
                 return stack

@@ -4,6 +4,9 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,10 +33,13 @@ import tools.jackson.databind.json.JsonMapper;
 public class ClaudeClient {
 
 	private static final Logger log = LoggerFactory.getLogger(ClaudeClient.class);
+	private static final Pattern IDENTIFIER = Pattern.compile("^[@A-Za-z0-9][A-Za-z0-9@._/:+-]{0,99}$");
 
 	private final ArtemisAppSecProperties.Ai config;
 	private final AnthropicClient client;
 	private final JsonMapper json = JsonMapper.builder().build();
+	/** At most this many AI calls at once across the server, so slow answers cannot hold every request thread. */
+	private final Semaphore slots = new Semaphore(4);
 
 	ClaudeClient(ArtemisAppSecProperties properties) {
 		this.config = properties.ai();
@@ -41,13 +47,28 @@ public class ClaudeClient {
 				? AnthropicOkHttpClient.builder()
 					.apiKey(config.anthropicApiKey())
 					.timeout(Duration.ofSeconds(config.timeoutSeconds()))
-					.maxRetries(1)
+					.maxRetries(0)
 					.build()
 				: null;
 	}
 
 	public boolean configured() {
 		return client != null;
+	}
+
+	/** Takes a call slot, waiting up to {@code wait}; callers that get one must {@link #release()} it. */
+	public boolean tryAcquire(Duration wait) {
+		try {
+			return slots.tryAcquire(wait.toMillis(), TimeUnit.MILLISECONDS);
+		}
+		catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			return false;
+		}
+	}
+
+	public void release() {
+		slots.release();
 	}
 
 	public String model() {
@@ -108,6 +129,25 @@ public class ClaudeClient {
 		}
 		String cleaned = s.replaceAll("[\\p{Cntrl}&&[^\\n]]", " ").replace("**", "").replace("`", "").strip();
 		return cleaned.isEmpty() || cleaned.length() > max ? null : cleaned;
+	}
+
+	/**
+	 * The value when it looks like a package name or version, else null. Names and versions come from the scanned
+	 * repository's manifests, so anything else (sentences, spaces, quotes) could carry instructions for the model.
+	 */
+	public static String safeIdentifier(String s) {
+		return s != null && IDENTIFIER.matcher(s).matches() ? s : null;
+	}
+
+	/** {@code name@installed→fixed} for the prompt, with only the parts that pass {@link #safeIdentifier}; null without a safe name. */
+	public static String packageRef(String name, String installed, String fixed) {
+		String safeName = safeIdentifier(name);
+		if (safeName == null) {
+			return null;
+		}
+		String in = safeIdentifier(installed);
+		String out = safeIdentifier(fixed);
+		return safeName + (in == null ? "" : "@" + in) + (out == null ? "" : "→" + out);
 	}
 
 	private static Map<String, JsonValue> toJsonValues(Map<String, Object> schema) {

@@ -40,8 +40,10 @@ management:
 
 springdoc:
   api-docs:
+    enabled: ${API_DOCS_ENABLED:false}
     path: /api/docs
   swagger-ui:
+    enabled: ${API_DOCS_ENABLED:false}
     path: /api/docs/ui
 
 artemisappsec:

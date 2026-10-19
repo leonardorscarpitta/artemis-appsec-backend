@@ -1,5 +1,7 @@
 # Local development stack: PostgreSQL, Keycloak (OIDC behind Caddy TLS), Mailpit, the API in debug mode and the scanner runner.
-# Every service has a memory limit so the whole stack fits comfortably on a 16 GB machine (~4.3 GB in total).
+# Every service has a memory limit so the whole stack fits comfortably on a 16 GB machine (~4.4 GB in total).
+# The scanner never shares a network with the API container (JDWP on 5005 has no authentication): it reaches the API
+# only through api-gateway, which forwards port 8080 and nothing else.
 services:
   db:
     image: postgres:18-alpine
@@ -37,7 +39,6 @@ services:
     mem_reservation: 768m
     networks:
       - default
-      - scanner
     ports:
       - "127.0.0.1:${API_PORT:-8080}:8080"
       - "127.0.0.1:${DEBUG_PORT:-5005}:5005"  # JDWP has no authentication: never expose it beyond this machine
@@ -87,7 +88,7 @@ services:
       JAVA_OPTS_KC_HEAP: -XX:MaxRAMPercentage=60
       # Placeholders used by the realm import
       ARTEMISAPPSEC_WEB_ORIGIN: ${ARTEMISAPPSEC_WEB_ORIGIN:-http://localhost:4200}
-      ARTEMISAPPSEC_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_API_CLIENT_SECRET:-}
+      ARTEMISAPPSEC_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_API_CLIENT_SECRET:?set KEYCLOAK_ADMIN_API_CLIENT_SECRET in .env (openssl rand -hex 32)}
       KC_SMTP_HOST: ${KC_SMTP_HOST:-mailpit}
       KC_SMTP_PORT: ${KC_SMTP_PORT:-1025}
       KC_SMTP_FROM: ${KC_SMTP_FROM:-no-reply@artemisappsec.localhost}
@@ -125,7 +126,7 @@ services:
     image: artemisappsec/runner:dev
     restart: unless-stopped
     environment:
-      ARTEMIS_API_URL: http://api:8080
+      ARTEMIS_API_URL: http://api-gateway:8080
       SCANNER_TOKEN: ${SCANNER_TOKEN:-}
       SCANNER_RUN_TIMEOUT_SECONDS: ${SCANNER_RUN_TIMEOUT_SECONDS:-3600}
     read_only: true
@@ -145,10 +146,23 @@ services:
     networks:
       - scanner
     depends_on:
+      - api-gateway
+
+  # The scanner reaches the API only through this proxy (port 8080), never the API container (JDWP 5005 has no auth).
+  # No network alias "api" here: the gateway would resolve itself.
+  api-gateway:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    command: ["caddy", "reverse-proxy", "--from", ":8080", "--to", "api:8080"]
+    mem_limit: 64m
+    networks:
+      - default
+      - scanner
+    depends_on:
       - api
 
 networks:
-  # Shared only by the API and the scanner; the database stays on the default network.
+  # Shared only by the scanner and api-gateway; the API, database and Keycloak stay on the default network.
   scanner: {}
 
 volumes:

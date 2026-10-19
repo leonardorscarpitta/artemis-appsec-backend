@@ -38,6 +38,7 @@ import io.github.artemiscore.artemisappsec.shared.error.ResourceNotFoundExceptio
 class ProjectServiceImpl implements ProjectService {
 
 	private static final String REMOVED = "The repository was removed.";
+	private static final int MAX_ACCESS_CHECKS_PER_HOUR = 30;
 	private static final List<AccessCheckStatus> ACTIVE_CHECKS = List.of(AccessCheckStatus.QUEUED, AccessCheckStatus.RUNNING);
 
 	private final ProjectRepository projects;
@@ -166,6 +167,11 @@ class ProjectServiceImpl implements ProjectService {
 			throw new BusinessRuleException("'%s' has no deploy key; generate one first".formatted(project.getName()));
 		}
 		if (checks.findFirstByProjectIdAndStatusIn(project.getId(), ACTIVE_CHECKS).isEmpty()) {
+			// Each check clones the repository on the shared runner.
+			if (checks.countForOrganizationSince(organizationId, Instant.now().minus(Duration.ofHours(1))) >= MAX_ACCESS_CHECKS_PER_HOUR) {
+				throw new ApiProblemException(HttpStatus.TOO_MANY_REQUESTS, "access-check-limit",
+						"Too many access checks in the last hour; try again later");
+			}
 			checks.save(new AccessCheck(project.getId()));
 		}
 		return toAccess(project);

@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import io.github.artemiscore.artemisappsec.organization.service.CreateOrganizationCommand;
 import io.github.artemiscore.artemisappsec.organization.service.Identity;
+import io.github.artemiscore.artemisappsec.organization.service.InvitationPreview;
 import io.github.artemiscore.artemisappsec.organization.service.MembershipService;
 import io.github.artemiscore.artemisappsec.organization.service.OrganizationMembership;
 import io.github.artemiscore.artemisappsec.organization.service.PendingInvitationView;
@@ -70,6 +71,12 @@ class MembershipController {
 	@PostMapping("/me/invitations/accept")
 	OrganizationMembership acceptLink(@Valid @RequestBody AcceptInvitationRequest request, @AuthenticationPrincipal Jwt jwt) {
 		return memberships.acceptInvitationLink(request.token(), identity(jwt));
+	}
+
+	/** What a one-time invitation link offers; the token is not consumed (sent in the body, never in the URL). */
+	@PostMapping("/me/invitations/preview")
+	InvitationPreview previewLink(@Valid @RequestBody AcceptInvitationRequest request) {
+		return memberships.previewInvitationLink(request.token());
 	}
 
 	record AcceptInvitationRequest(@NotBlank @Size(max = 100) String token) {

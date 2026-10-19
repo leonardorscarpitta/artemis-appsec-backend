@@ -7,8 +7,22 @@ mkdir -p keycloak/secrets
 OUT=keycloak/secrets/dev-credentials.txt
 . ./.env
 
+# docker compose refuses to run without KEYCLOAK_ADMIN_API_CLIENT_SECRET, so make sure it exists first.
+secret="${KEYCLOAK_ADMIN_API_CLIENT_SECRET:-}"
+if [ -z "$secret" ]; then
+  secret="$(openssl rand -hex 32)"
+  sed -i '/^KEYCLOAK_ADMIN_API_CLIENT_SECRET=$/d' .env
+  printf '\nKEYCLOAK_ADMIN_API_CLIENT_SECRET=%s\n' "$secret" >> .env
+  echo "Wrote KEYCLOAK_ADMIN_API_CLIENT_SECRET to .env — recreate Keycloak and the API: docker compose up -d keycloak api"
+fi
+
 kcadm() {
   docker compose exec -T keycloak /opt/keycloak/bin/kcadm.sh "$@" </dev/null
+}
+
+# For values that must not appear in process arguments: JSON on stdin (-f -).
+kcadm_stdin() {
+  docker compose exec -T keycloak /opt/keycloak/bin/kcadm.sh "$@"
 }
 
 kcadm config credentials --server http://localhost:8080 --realm master \
@@ -35,21 +49,16 @@ kcadm get roles/artemis-admin -r artemisappsec >/dev/null 2>&1 || kcadm create r
 kcadm add-roles -r artemisappsec --uusername admin.artemis --rolename artemis-admin
 
 # Service-account client for user management (in the realm import; created here for realms imported before it).
-# Uses KEYCLOAK_ADMIN_API_CLIENT_SECRET from .env, or generates one and appends it to .env.
-secret="${KEYCLOAK_ADMIN_API_CLIENT_SECRET:-}"
-if [ -z "$secret" ]; then
-  secret="$(openssl rand -hex 32)"
-  printf '\nKEYCLOAK_ADMIN_API_CLIENT_SECRET=%s\n' "$secret" >> .env
-  echo "Wrote KEYCLOAK_ADMIN_API_CLIENT_SECRET to .env — recreate the API: docker compose up -d api"
-fi
+# Always (re)sets the secret from .env, which also fixes a realm imported with an empty secret.
 cid="$(kcadm get clients -r artemisappsec -q clientId=artemisappsec-admin-api --fields id --format csv --noquotes)"
 if [ -z "$cid" ]; then
-  kcadm create clients -r artemisappsec -s clientId=artemisappsec-admin-api -s 'name=Artemis API (user administration)' \
+  printf '{"secret":"%s"}' "$secret" | kcadm_stdin create clients -r artemisappsec -f - \
+    -s clientId=artemisappsec-admin-api -s 'name=Artemis API (user administration)' \
     -s enabled=true -s publicClient=false -s clientAuthenticatorType=client-secret -s serviceAccountsEnabled=true \
     -s standardFlowEnabled=false -s implicitFlowEnabled=false -s directAccessGrantsEnabled=false \
-    -s frontchannelLogout=false -s "secret=$secret" >/dev/null
+    -s frontchannelLogout=false >/dev/null
 else
-  kcadm update "clients/$cid" -r artemisappsec -s "secret=$secret"
+  printf '{"secret":"%s"}' "$secret" | kcadm_stdin update "clients/$cid" -r artemisappsec -f -
 fi
 kcadm add-roles -r artemisappsec --uusername service-account-artemisappsec-admin-api --cclientid realm-management \
   --rolename view-users --rolename query-users --rolename manage-users

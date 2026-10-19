@@ -16,9 +16,10 @@ import io.github.artemiscore.artemisappsec.shared.ai.ClaudeClient;
 
 /**
  * The only data Artemis sends to the AI provider to explain a finding: public identifiers (CVE or rule id, CWE,
- * package and versions), the scanner's title and description (neither for secrets), severity, CVSS and the
- * repository's stack. It never contains source code, file paths or lines, secret values, repository or organization
- * names, people or logs. Keep it that way: this is what the Privacy Policy describes.
+ * package and versions that look like identifiers), the scanner's title and description (neither for secrets nor
+ * licenses), severity, CVSS and the repository's stack. It never contains source code, file paths or lines, secret
+ * values, free text taken from the repository, repository or organization names, people or logs. Keep it that way:
+ * this is what the Privacy Policy describes.
  */
 final class InsightPayload {
 
@@ -70,8 +71,8 @@ final class InsightPayload {
 		payload.put("lang", language);
 		payload.put("kind", f.kind().wireValue());
 		payload.put("id", f.cve() != null ? f.cve() : f.ruleId());
-		// Secrets are described by their rule id only.
-		if (f.kind() != FindingKind.SECRET) {
+		// Secrets are described by their rule id only; license texts may quote repository content (the license is in id).
+		if (f.kind() != FindingKind.SECRET && f.kind() != FindingKind.LICENSE) {
 			payload.put("title", truncate(f.title(), MAX_TITLE));
 			payload.put("desc", truncate(details.description(), MAX_DESCRIPTION));
 		}
@@ -80,8 +81,7 @@ final class InsightPayload {
 		payload.put("vector", details.vector());
 		payload.put("cwe", details.cwe() != null ? details.cwe() : f.cwe());
 		if (f.packageName() != null) {
-			payload.put("pkg", f.packageName() + (f.installedVersion() == null ? "" : "@" + f.installedVersion())
-					+ (f.fixedVersion() == null ? "" : "→" + f.fixedVersion()));
+			payload.put("pkg", ClaudeClient.packageRef(f.packageName(), f.installedVersion(), f.fixedVersion()));
 			payload.put("eco", f.ecosystem() == null ? null : f.ecosystem().name().toLowerCase());
 		}
 		payload.put("stack", stack);

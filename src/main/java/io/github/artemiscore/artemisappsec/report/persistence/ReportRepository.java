@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
 import io.github.artemiscore.artemisappsec.report.domain.Report;
+import io.github.artemiscore.artemisappsec.report.domain.ReportStatus;
 
 public interface ReportRepository extends JpaRepository<Report, UUID> {
 
@@ -23,5 +24,5 @@ public interface ReportRepository extends JpaRepository<Report, UUID> {
 			ORDER BY generated_at LIMIT 1 FOR UPDATE SKIP LOCKED""", nativeQuery = true)
 	Optional<Report> lockNextToGenerate(Instant stuckBefore);
 
-	long countByOrganizationIdAndAiUsedTrueAndGeneratedAtGreaterThanEqual(UUID organizationId, Instant since);
+	long countByOrganizationIdAndStatus(UUID organizationId, ReportStatus status);
 }

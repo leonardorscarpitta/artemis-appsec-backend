@@ -14,6 +14,10 @@ from .tools import MAX_FINDINGS
 
 log = logging.getLogger("artemis.runner")
 
+# Stack detection only reads manifests, so it gets a smaller clone than a scan (access checks are cheap to request).
+DETECT_TIMEOUT_SECONDS = 120
+DETECT_MAX_REPO_MB = 200
+
 
 def process(job: dict, api: ApiClient, config: Config) -> None:
     run_id = job["runId"]
@@ -141,7 +145,8 @@ def process_access_check(job: dict, api: ApiClient, config: Config) -> None:
 def detect_stack(repo: dict, work: Path, ssh: SshSession, config: Config) -> dict | None:
     """Best effort: a failed clone or detection never turns a successful access check into a failure."""
     try:
-        clone(repo["cloneUrl"], repo.get("branch", "main"), work / "src", config.clone_timeout, 500, ssh)
+        clone(repo["cloneUrl"], repo.get("branch", "main"), work / "src", min(config.clone_timeout, DETECT_TIMEOUT_SECONDS),
+              DETECT_MAX_REPO_MB, ssh)
         return detect(work / "src")
     except Exception as error:  # noqa: BLE001 - detection is optional
         log.info("stack detection for %s skipped (%s)", repo.get("name"), type(error).__name__)

@@ -1,6 +1,5 @@
 package io.github.artemiscore.artemisappsec.insight.persistence;
 
-import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -16,6 +15,4 @@ public interface FindingInsightRepository extends JpaRepository<FindingInsight, 
 	/** Any language, newest first: for when the organization changed its language after the explanation was made. */
 	Optional<FindingInsight> findFirstByOrganizationIdAndCacheKeyOrderByCreatedAtDesc(UUID organizationId,
 			String cacheKey);
-
-	long countByOrganizationIdAndCreatedAtGreaterThanEqual(UUID organizationId, Instant since);
 }

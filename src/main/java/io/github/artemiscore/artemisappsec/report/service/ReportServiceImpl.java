@@ -27,6 +27,7 @@ import io.github.artemiscore.artemisappsec.shared.error.ResourceNotFoundExceptio
 @Transactional(readOnly = true)
 class ReportServiceImpl implements ReportService {
 
+	private static final int MAX_GENERATING = 3;
 	private static final String EN = ReportTexts.EN;
 	private static final String PT = ReportTexts.PT;
 
@@ -60,6 +61,7 @@ class ReportServiceImpl implements ReportService {
 	@Override
 	@Transactional
 	public ReportSummary request(UUID organizationId, GenerateReportCommand command, Locale locale) {
+		requireRoomInQueue(organizationId);
 		String scope = command.scope() == null || command.scope().isBlank() ? null : command.scope();
 		UUID projectId = scope == null ? null : projectId(organizationId, scope);
 		LocalDate[] period = command.period().lastCompleteBefore(LocalDate.now(clock));
@@ -77,8 +79,16 @@ class ReportServiceImpl implements ReportService {
 		if (report.getStatus() != ReportStatus.FAILED) {
 			throw new ApiProblemException(HttpStatus.CONFLICT, "report-not-failed", "Only failed reports can be retried");
 		}
+		requireRoomInQueue(organizationId);
 		report.retry();
 		return toSummary(report, projectNames(organizationId), locale);
+	}
+
+	private void requireRoomInQueue(UUID organizationId) {
+		if (reports.countByOrganizationIdAndStatus(organizationId, ReportStatus.GENERATING) >= MAX_GENERATING) {
+			throw new ApiProblemException(HttpStatus.TOO_MANY_REQUESTS, "report-queue-full",
+					"Your organization already has %d reports being generated; wait for them to finish".formatted(MAX_GENERATING));
+		}
 	}
 
 	private UUID projectId(UUID organizationId, String name) {

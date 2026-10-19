@@ -15,6 +15,7 @@ import org.springframework.web.method.support.ModelAndViewContainer;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
+import io.github.artemiscore.artemisappsec.organization.service.DeletedAccounts;
 import io.github.artemiscore.artemisappsec.organization.service.MembershipService;
 import io.github.artemiscore.artemisappsec.organization.service.Tenant;
 import io.github.artemiscore.artemisappsec.shared.config.ArtemisAppSecProperties;
@@ -30,16 +31,18 @@ class TenantWebConfig implements WebMvcConfigurer {
 	}
 
 	private final MembershipService memberships;
+	private final DeletedAccounts deletedAccounts;
 	private final boolean authEnabled;
 
-	TenantWebConfig(MembershipService memberships, ArtemisAppSecProperties properties) {
+	TenantWebConfig(MembershipService memberships, DeletedAccounts deletedAccounts, ArtemisAppSecProperties properties) {
 		this.memberships = memberships;
+		this.deletedAccounts = deletedAccounts;
 		this.authEnabled = properties.security().authEnabled();
 	}
 
 	@Override
 	public void addInterceptors(InterceptorRegistry registry) {
-		registry.addInterceptor(new TenantInterceptor(memberships, authEnabled)).addPathPatterns("/api/v1/**");
+		registry.addInterceptor(new TenantInterceptor(memberships, deletedAccounts, authEnabled)).addPathPatterns("/api/v1/**");
 	}
 
 	@Override
