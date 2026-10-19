@@ -34,6 +34,7 @@ import io.github.artemiscore.artemisappsec.pipelinerun.domain.StageRun;
 import io.github.artemiscore.artemisappsec.pipelinerun.domain.StageStatus;
 import io.github.artemiscore.artemisappsec.pipelinerun.persistence.PipelineRunRepository;
 import io.github.artemiscore.artemisappsec.pipelinerun.persistence.RunQuota;
+import io.github.artemiscore.artemisappsec.pipelinerun.persistence.RunSboms;
 import io.github.artemiscore.artemisappsec.project.service.ProjectDetails;
 import io.github.artemiscore.artemisappsec.project.service.ProjectService;
 import io.github.artemiscore.artemisappsec.project.domain.AccessStatus;
@@ -58,12 +59,14 @@ class PipelineRunServiceImpl implements PipelineRunService {
 	private final UsageService usage;
 	private final OrganizationFeatures features;
 	private final RunQuota quota;
+	private final RunSboms sboms;
 	private final Clock clock;
 
 	PipelineRunServiceImpl(PipelineRunRepository runs, ProjectService projects, UsageService usage, OrganizationFeatures features,
-			RunQuota quota) {
+			RunQuota quota, RunSboms sboms) {
 		this.runs = runs;
 		this.quota = quota;
+		this.sboms = sboms;
 		this.projects = projects;
 		this.usage = usage;
 		this.features = features;
@@ -228,6 +231,29 @@ class PipelineRunServiceImpl implements PipelineRunService {
 
 	@Override
 	@Transactional
+	public void storeSbom(UUID runId, String folder, byte[] gzipped, int sizeBytes, int components) {
+		PipelineRun run = loadById(runId);
+		if (run.getStatus() != RunStatus.RUNNING) {
+			throw new BusinessRuleException("Run #%d is %s; SBOMs are no longer accepted"
+				.formatted(run.getNumber(), run.getStatus().wireValue()));
+		}
+		if (run.getFolders().isEmpty() ? !folder.isEmpty() : !run.getFolders().contains(folder)) {
+			throw new IllegalArgumentException("Run #%d does not scan folder '%s'".formatted(run.getNumber(), folder));
+		}
+		sboms.save(runId, folder, gzipped, sizeBytes, components);
+	}
+
+	@Override
+	public SbomFile sbom(UUID organizationId, long number, String folder) {
+		Map<UUID, ProjectSummary> names = projectNames(organizationId);
+		PipelineRun run = load(number, names);
+		RunSboms.Content content = sboms.content(run.getId(), folder)
+			.orElseThrow(() -> new ResourceNotFoundException("Pipeline run SBOM", number));
+		return new SbomFile(names.get(run.getProjectId()).name(), number, folder, content.gzipped(), content.sizeBytes());
+	}
+
+	@Override
+	@Transactional
 	public void complete(UUID runId) {
 		PipelineRun run = loadById(runId);
 		Instant now = Instant.now(clock);
@@ -350,8 +376,9 @@ class PipelineRunServiceImpl implements PipelineRunService {
 				r.getFolders(), r.isQuotaRefunded());
 	}
 
-	private static RunDetails toDetails(PipelineRun r, Map<UUID, ProjectSummary> names) {
-		return new RunDetails(toView(r, names), r.getStages().stream().map(PipelineRunServiceImpl::toStageView).toList());
+	private RunDetails toDetails(PipelineRun r, Map<UUID, ProjectSummary> names) {
+		List<SbomView> stored = sboms.list(r.getId()).stream().map(e -> new SbomView(e.folder(), e.components(), e.sizeBytes())).toList();
+		return new RunDetails(toView(r, names), r.getStages().stream().map(PipelineRunServiceImpl::toStageView).toList(), stored);
 	}
 
 	private static StageRunView toStageView(StageRun s) {

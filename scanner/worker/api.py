@@ -2,7 +2,9 @@
 import json
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
+from pathlib import Path
 
 from .config import Config
 
@@ -34,6 +36,11 @@ class ApiClient:
     def stage(self, run_id: str, stage_id: str, result: dict) -> dict:
         return self._request("PUT", f"/jobs/{run_id}/stages/{stage_id}", result)[1] or {}
 
+    def sbom(self, run_id: str, folder: str, path: Path) -> None:
+        """Streams the CycloneDX JSON file to the API (one stored SBOM per run and folder)."""
+        query = urllib.parse.urlencode({"folder": folder})
+        self._request("PUT", f"/jobs/{run_id}/sbom?{query}", body_file=path)
+
     def complete(self, run_id: str) -> None:
         self._request("POST", f"/jobs/{run_id}/complete", {})
 
@@ -46,11 +53,16 @@ class ApiClient:
                       {"status": "ok" if ok else "failed", "message": message[:500], "hostKey": host_key,
                        "detected": detected})
 
-    def _request(self, method: str, path: str, payload: dict) -> tuple[int, dict | None]:
-        data = json.dumps(payload).encode()
+    def _request(self, method: str, path: str, payload: dict | None = None,
+                 body_file: Path | None = None) -> tuple[int, dict | None]:
+        data = json.dumps(payload).encode() if body_file is None else None
+        headers = dict(self._headers)
+        if body_file is not None:
+            headers["Content-Length"] = str(body_file.stat().st_size)
         delay = 1.0
         for attempt in range(1, RETRIES + 1):
-            request = urllib.request.Request(self._base + path, data=data, method=method, headers=self._headers)
+            handle = open(body_file, "rb") if body_file is not None else None
+            request = urllib.request.Request(self._base + path, data=handle or data, method=method, headers=headers)
             try:
                 with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
                     raw = response.read()
@@ -62,6 +74,9 @@ class ApiClient:
             except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
                 if attempt == RETRIES:
                     raise ApiError(f"{method} {path} -> {type(error).__name__}") from None
+            finally:
+                if handle:
+                    handle.close()
             time.sleep(delay)
             delay = min(delay * 2, 30)
         raise ApiError(f"{method} {path} failed")

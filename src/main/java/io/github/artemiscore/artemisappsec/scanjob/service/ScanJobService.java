@@ -10,6 +10,9 @@ import io.github.artemiscore.artemisappsec.shared.domain.Stage;
 /** Coordinates the scanner runner: hands out queued runs and records what it reports. */
 public interface ScanJobService {
 
+	/** Largest SBOM (raw CycloneDX JSON) the runner may upload. */
+	int MAX_SBOM_BYTES = 20 * 1024 * 1024;
+
 	/** The next access check, else the next queued run; empty when there is nothing to do. */
 	Optional<Assignment> claim();
 
@@ -20,6 +23,12 @@ public interface ScanJobService {
 
 	/** Records a stage result and, when the stage completed, its findings; returns the final stage status. */
 	StageStatus recordStage(UUID runId, Stage stage, StageReport report);
+
+	/**
+	 * Stores the CycloneDX JSON SBOM of one scanned folder ({@code ""} = whole repository) while the run's SBOM stage
+	 * is pending; returns the number of components.
+	 */
+	int recordSbom(UUID runId, String folder, byte[] json);
 
 	void complete(UUID runId);
 

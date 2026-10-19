@@ -10,8 +10,9 @@ DEFAULT_STAGE_TIMEOUT = 600
 
 
 def run_stage(stage_id: str, tool: str, src: Path, work: Path, timeout: int = DEFAULT_STAGE_TIMEOUT,
-              image: str | None = None) -> dict:
-    """Returns the contract's stage result: status completed|skipped|error, tool, durationSeconds, log, findings."""
+              image: str | None = None, keep_artifact: Path | None = None) -> dict:
+    """Returns the contract's stage result: status completed|skipped|error, tool, durationSeconds, log, findings.
+    With {keep_artifact}, the tool's artifact (if any) is moved there instead of being deleted."""
     started = time.monotonic()
     adapter = ADAPTERS.get((stage_id, tool))
     if (stage_id, tool) in IMAGE_ADAPTERS:
@@ -29,6 +30,8 @@ def run_stage(stage_id: str, tool: str, src: Path, work: Path, timeout: int = DE
     out.mkdir(parents=True)
     try:
         result = adapter(src, out, timeout)
+        if keep_artifact and result.artifact and result.artifact.is_file():
+            shutil.move(result.artifact, keep_artifact)
     except ToolError as error:
         return _result("error", tool, started, str(error))
     finally:
