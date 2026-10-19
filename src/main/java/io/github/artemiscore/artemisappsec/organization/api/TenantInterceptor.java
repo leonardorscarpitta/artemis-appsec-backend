@@ -9,6 +9,7 @@ import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 import io.github.artemiscore.artemisappsec.organization.domain.Permission;
+import io.github.artemiscore.artemisappsec.organization.service.DeletedAccounts;
 import io.github.artemiscore.artemisappsec.organization.service.Identity;
 import io.github.artemiscore.artemisappsec.organization.service.MembershipService;
 import io.github.artemiscore.artemisappsec.organization.service.Tenant;
@@ -25,15 +26,21 @@ class TenantInterceptor implements HandlerInterceptor {
 	private static final Logger log = LoggerFactory.getLogger(TenantInterceptor.class);
 
 	private final MembershipService memberships;
+	private final DeletedAccounts deletedAccounts;
 	private final boolean authEnabled;
 
-	TenantInterceptor(MembershipService memberships, boolean authEnabled) {
+	TenantInterceptor(MembershipService memberships, DeletedAccounts deletedAccounts, boolean authEnabled) {
 		this.memberships = memberships;
+		this.deletedAccounts = deletedAccounts;
 		this.authEnabled = authEnabled;
 	}
 
 	@Override
 	public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+		Identity identity = Identities.current();
+		if (identity != null && deletedAccounts.contains(identity.subject())) {
+			throw new ApiProblemException(HttpStatus.UNAUTHORIZED, "unauthenticated", "Sign in to continue");
+		}
 		if (!(handler instanceof HandlerMethod method) || !isOrganizationScoped(method)) {
 			return true;
 		}
@@ -43,7 +50,6 @@ class TenantInterceptor implements HandlerInterceptor {
 					"The %s header is required".formatted(HEADER));
 		}
 		slug = slug.strip().toLowerCase(Locale.ROOT);
-		Identity identity = Identities.current();
 		Tenant tenant = identity != null ? memberships.resolve(slug, identity)
 				: authEnabled ? null : memberships.resolveUnauthenticated(slug);
 		if (tenant == null) {

@@ -115,7 +115,10 @@ class KeycloakAdminClient {
 			.orElse(false);
 	}
 
-	/** Deletes the account; Keycloak also ends its sessions and revokes its tokens. */
+	/**
+	 * Deletes the account. Keycloak ends its sessions; access tokens already issued stay valid until they expire, so the
+	 * API also refuses them ({@link DeletedAccounts}).
+	 */
 	void deleteUser(String id) {
 		call(() -> http.delete()
 			.uri("/admin/realms/{realm}/users/{id}", config.realm(), id)
