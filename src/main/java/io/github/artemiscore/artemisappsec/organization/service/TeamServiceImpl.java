@@ -1,6 +1,7 @@
 package io.github.artemiscore.artemisappsec.organization.service;
 
 import java.time.Instant;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -151,12 +152,21 @@ class TeamServiceImpl implements TeamService {
 			throw new ApiProblemException(HttpStatus.BAD_REQUEST, "owner-only-permission",
 					"Ownership and deleting the organization belong to the owner only");
 		}
+		if (tenant.role() != Role.OWNER) {
+			Set<Permission> added = EnumSet.noneOf(Permission.class);
+			added.addAll(permissions);
+			added.removeAll(rolePermissions.permissionsOf(tenant.organizationId(), role));
+			if (!tenant.permissions().containsAll(added)) {
+				throw new ApiProblemException(HttpStatus.FORBIDDEN, "permission-not-held",
+						"You can only grant permissions your own role has");
+			}
+		}
 		rolePermissions.replace(tenant.organizationId(), role, permissions);
 		return toView(tenant, role, rolePermissions.permissionsOf(tenant.organizationId(), role));
 	}
 
 	private static RoleView toView(Tenant tenant, Role role, Set<Permission> permissions) {
-		boolean editable = role != Role.OWNER && (tenant.role() == Role.OWNER || (tenant.role() == Role.ADMIN && role != Role.ADMIN));
+		boolean editable = role != Role.OWNER && (tenant.role() == Role.OWNER || (tenant.role() == Role.ADMIN && role != Role.ADMIN && tenant.can(Permission.TEAM)));
 		return new RoleView(role, permissions.stream().sorted().toList(), role != Role.OWNER, editable);
 	}
 
