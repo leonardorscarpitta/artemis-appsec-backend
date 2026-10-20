@@ -16,6 +16,7 @@ import io.github.artemiscore.artemisappsec.finding.service.FindingSummary;
 import io.github.artemiscore.artemisappsec.report.domain.ReportContent;
 import io.github.artemiscore.artemisappsec.report.domain.ReportContent.ComponentNote;
 import io.github.artemiscore.artemisappsec.report.domain.ReportContent.ImageNote;
+import io.github.artemiscore.artemisappsec.report.domain.ReportSection;
 import io.github.artemiscore.artemisappsec.shared.ai.ClaudeClient;
 
 /**
@@ -38,31 +39,43 @@ final class AiReportPayload {
 	private static final int MAX_RECOMMENDATIONS = 6;
 
 	private static final Map<String, Object> TEXT = Map.of("type", "string");
-	static final Map<String, Object> RESPONSE_SCHEMA = Map.of("type", "object",
-			"properties", Map.of("summary", TEXT, "recommendations", Map.of("type", "array", "items", TEXT)),
-			"required", List.of("summary", "recommendations"), "additionalProperties", false);
-
 	private static final int MAX_NOTES = 8;
 	private static final int MAX_NOTE = 240;
-	private static final Map<String, Object> DEPENDENCY_SCHEMA = Map.of("type", "object",
-			"properties", Map.of("summary", TEXT, "recommendations", Map.of("type", "array", "items", TEXT),
-					"components", Map.of("type", "array", "items", Map.of("type", "object",
-							"properties", Map.of("pkg", TEXT, "concern", Map.of("type", "string", "enum", ComponentNote.CONCERNS),
-									"note", TEXT),
-							"required", List.of("pkg", "concern", "note"), "additionalProperties", false)),
-					"images", Map.of("type", "array", "items", Map.of("type", "object",
-							"properties", Map.of("ref", TEXT, "standing", Map.of("type", "string", "enum", ImageNote.STANDINGS),
-									"note", TEXT),
-							"required", List.of("ref", "standing", "note"), "additionalProperties", false))),
-			"required", List.of("summary", "recommendations", "components", "images"), "additionalProperties", false);
+	private static final Map<String, Object> COMPONENTS = Map.of("type", "array", "items", Map.of("type", "object",
+			"properties", Map.of("pkg", TEXT, "concern", Map.of("type", "string", "enum", ComponentNote.CONCERNS), "note", TEXT),
+			"required", List.of("pkg", "concern", "note"), "additionalProperties", false));
+	private static final Map<String, Object> IMAGES = Map.of("type", "array", "items", Map.of("type", "object",
+			"properties", Map.of("ref", TEXT, "standing", Map.of("type", "string", "enum", ImageNote.STANDINGS), "note", TEXT),
+			"required", List.of("ref", "standing", "note"), "additionalProperties", false));
 
-	/** Dependency reports also carry component and image notes. */
-	static long maxTokens(ReportFacts facts) {
-		return facts.content().dependencies() != null ? 1536 : MAX_TOKENS;
+	/** Whether the AI has anything to write for the report's topics. */
+	static boolean needed(ReportFacts facts) {
+		return wantsText(facts) || facts.content().dependencies() != null;
 	}
 
+	/** Only the requested topics are asked for: every output field costs tokens. */
 	static Map<String, Object> schema(ReportFacts facts) {
-		return facts.content().dependencies() != null ? DEPENDENCY_SCHEMA : RESPONSE_SCHEMA;
+		Map<String, Object> properties = new LinkedHashMap<>();
+		if (facts.sections().contains(ReportSection.SUMMARY)) {
+			properties.put("summary", TEXT);
+		}
+		if (facts.sections().contains(ReportSection.RECOMMENDATIONS)) {
+			properties.put("recommendations", Map.of("type", "array", "items", TEXT));
+		}
+		if (facts.content().dependencies() != null) {
+			properties.put("components", COMPONENTS);
+			properties.put("images", IMAGES);
+		}
+		return Map.of("type", "object", "properties", properties, "required", List.copyOf(properties.keySet()),
+				"additionalProperties", false);
+	}
+
+	static long maxTokens(ReportFacts facts) {
+		return (wantsText(facts) ? MAX_TOKENS : 0) + (facts.content().dependencies() != null ? 640 : 0);
+	}
+
+	private static boolean wantsText(ReportFacts facts) {
+		return facts.sections().contains(ReportSection.SUMMARY) || facts.sections().contains(ReportSection.RECOMMENDATIONS);
 	}
 
 	private AiReportPayload() {
@@ -71,12 +84,14 @@ final class AiReportPayload {
 	/** Compact on purpose: every field costs tokens. */
 	static Map<String, Object> of(ReportFacts facts, Instant now, String language) {
 		ReportContent c = facts.content();
-		if (c.dependencies() != null) {
-			return dependencies(c.dependencies(), facts.sbomPackages(), language);
-		}
 		Map<String, Object> payload = new LinkedHashMap<>();
 		payload.put("lang", language);
-		payload.put("type", facts.type().code());
+		if (c.dependencies() != null) {
+			payload.put("sbom", dependencies(c.dependencies(), facts.sbomPackages()));
+		}
+		if (!wantsText(facts)) {
+			return payload;
+		}
 		payload.put("days", facts.periodDays());
 		payload.put("detected", c.kpis().opened());
 		payload.put("fixed", c.kpis().fixed());
@@ -94,13 +109,11 @@ final class AiReportPayload {
 	}
 
 	/**
-	 * Dependency reports: aggregate counts, SPDX license ids and only the vulnerable components (public package names
+	 * The SBOM topic: aggregate counts, SPDX license ids and only the vulnerable components (public package names
 	 * with advisories), never the full component list or repository names.
 	 */
-	private static Map<String, Object> dependencies(ReportContent.Dependencies d, List<String> packages, String language) {
+	private static Map<String, Object> dependencies(ReportContent.Dependencies d, List<String> packages) {
 		Map<String, Object> payload = new LinkedHashMap<>();
-		payload.put("lang", language);
-		payload.put("type", "dependencies");
 		payload.put("repos", d.repositories().size());
 		payload.put("reposWithoutSbom", d.withoutSbom().size());
 		payload.put("components", d.components());
@@ -175,13 +188,11 @@ final class AiReportPayload {
 	}
 
 	static final String SYSTEM_INSTRUCTION = """
-			AppSec analyst. From the JSON only (never invent CVEs, packages, versions or numbers), write:
-			summary: executive summary, max 80 words;
+			AppSec analyst. From the JSON only (never invent CVEs, packages, versions or numbers), fill only the fields the output schema has:
+			summary: executive summary, max 80 words (mention the SBOM when "sbom" is present);
 			recommendations: 3-5, most urgent first, max 25 words each, citing ids, packages and fixed versions (pkg is name@installed→fixed).
-			Type "compliance": frame by OWASP 2021 category (owasp = category id → open findings).
-			Type "dependencies": summarize the SBOM supply chain. recommendations: upgrades from vulnerableTop, license review, risky components.
-			components: only pkgs entries (copy pkg exactly) that deserve attention: little-known publisher, low adoption, typosquat-like name, unmaintained or deprecated; max 8, note max 20 words; [] if none. Never flag well-known widely used packages.
-			images: one per images entry (copy ref exactly): official, widely-used or unknown, note max 15 words.
+			components: only sbom.pkgs entries (copy pkg exactly) that deserve attention: little-known publisher, low adoption, typosquat-like name, unmaintained or deprecated; max 8, note max 20 words; [] if none. Never flag well-known widely used packages.
+			images: one per sbom.images entry (copy ref exactly): official, widely-used or unknown, note max 15 words.
 			Write in the language of "lang" (en-US English, pt-BR Brazilian Portuguese). Plain text, no markdown.""";
 
 	@JsonIgnoreProperties(ignoreUnknown = true)
@@ -219,17 +230,27 @@ final class AiReportPayload {
 			.toList();
 	}
 
-	static Optional<AiText> validated(AiText text) {
-		if (text.summary() == null || text.recommendations() == null || text.recommendations().isEmpty()) {
-			return Optional.empty();
+	/** Checks the requested texts; topics that were not requested come back null. */
+	static Optional<AiText> validated(AiText text, ReportFacts facts) {
+		String summary = null;
+		if (facts.sections().contains(ReportSection.SUMMARY)) {
+			summary = ClaudeClient.clean(text.summary(), MAX_SUMMARY);
+			if (summary == null) {
+				return Optional.empty();
+			}
 		}
-		String summary = ClaudeClient.clean(text.summary(), MAX_SUMMARY);
-		List<String> recs = text.recommendations().stream()
-			.limit(MAX_RECOMMENDATIONS)
-			.map(r -> ClaudeClient.clean(r, MAX_RECOMMENDATION))
-			.toList();
-		if (summary == null || recs.contains(null)) {
-			return Optional.empty();
+		List<String> recs = null;
+		if (facts.sections().contains(ReportSection.RECOMMENDATIONS)) {
+			if (text.recommendations() == null || text.recommendations().isEmpty()) {
+				return Optional.empty();
+			}
+			recs = text.recommendations().stream()
+				.limit(MAX_RECOMMENDATIONS)
+				.map(r -> ClaudeClient.clean(r, MAX_RECOMMENDATION))
+				.toList();
+			if (recs.contains(null)) {
+				return Optional.empty();
+			}
 		}
 		return Optional.of(new AiText(summary, recs, text.components(), text.images()));
 	}

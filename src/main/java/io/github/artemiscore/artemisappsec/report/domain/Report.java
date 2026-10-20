@@ -2,7 +2,9 @@ package io.github.artemiscore.artemisappsec.report.domain;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.EnumSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import org.hibernate.annotations.JdbcTypeCode;
@@ -37,6 +39,10 @@ public class Report {
 
 	@Column(name = "project_id")
 	private UUID projectId;
+
+	/** Null for reports created before topics could be chosen: their type decides the contents. */
+	@JdbcTypeCode(SqlTypes.JSON)
+	private Set<ReportSection> sections;
 
 	@Column(name = "period_start", nullable = false)
 	private LocalDate periodStart;
@@ -77,13 +83,14 @@ public class Report {
 
 	/** A report requested by a user; content is filled in by the generator once it is ready. */
 	public static Report requested(UUID organizationId, Map<String, String> title, ReportType type, UUID projectId,
-			LocalDate periodStart, LocalDate periodEnd) {
+			Set<ReportSection> sections, LocalDate periodStart, LocalDate periodEnd) {
 		Report report = new Report();
 		report.id = UUID.randomUUID();
 		report.organizationId = organizationId;
 		report.title = Map.copyOf(title);
 		report.type = type;
 		report.projectId = projectId;
+		report.sections = Set.copyOf(sections);
 		report.periodStart = periodStart;
 		report.periodEnd = periodEnd;
 		report.generatedAt = Instant.now();
@@ -130,6 +137,15 @@ public class Report {
 
 	public UUID getProjectId() {
 		return projectId;
+	}
+
+	/** The topics to include; older reports get the ones their type had. */
+	public Set<ReportSection> getSections() {
+		if (sections != null) {
+			return sections.isEmpty() ? EnumSet.noneOf(ReportSection.class) : EnumSet.copyOf(sections);
+		}
+		return type == ReportType.DEPENDENCIES ? EnumSet.allOf(ReportSection.class)
+				: EnumSet.of(ReportSection.SUMMARY, ReportSection.RECOMMENDATIONS);
 	}
 
 	public LocalDate getPeriodStart() {
