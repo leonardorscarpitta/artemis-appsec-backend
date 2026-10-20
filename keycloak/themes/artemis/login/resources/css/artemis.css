@@ -65,21 +65,21 @@
 }
 
 :root.pf-v5-theme-dark {
-  --art-bg: #0e141c;
-  --art-surface: #151d28;
-  --art-surface-alt: #18212d;
-  --art-border: #283444;
-  --art-border-strong: #3a4759;
-  --art-text: #e3e8ef;
-  --art-text-muted: #9ba7b6;
-  --art-primary: #5b9bdc;
-  --art-primary-hover: #78afe6;
-  --art-primary-soft: #1a2b40;
-  --art-primary-contrast: #0b1520;
-  --art-focus: #78afe6;
-  --art-critical: #f47c74;
-  --art-critical-bg: #3a1c1c;
-  --art-nav-bg: #0a1018;
+  --art-bg: #1d2125;
+  --art-surface: #22272b;
+  --art-surface-alt: #282e33;
+  --art-border: #384047;
+  --art-border-strong: #4c565f;
+  --art-text: #d5dde5;
+  --art-text-muted: #9fadbc;
+  --art-primary: #579dff;
+  --art-primary-hover: #85b8ff;
+  --art-primary-soft: #1c2b41;
+  --art-primary-contrast: #1d2125;
+  --art-focus: #85b8ff;
+  --art-critical: #f87168;
+  --art-critical-bg: #42221f;
+  --art-nav-bg: #161a1d;
 }
 
 html,
