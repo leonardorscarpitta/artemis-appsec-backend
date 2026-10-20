@@ -76,3 +76,4 @@ artemisappsec:
     timeout-seconds: ${AI_TIMEOUT_SECONDS:60}
     reports-per-day: ${AI_REPORTS_PER_DAY:10}
     insights-per-day: ${AI_INSIGHTS_PER_DAY:50}
+    sbom-max-packages: ${AI_SBOM_MAX_PACKAGES:200}
