@@ -2,9 +2,11 @@ package io.github.artemiscore.artemisappsec.report.service;
 
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -17,6 +19,7 @@ import io.github.artemiscore.artemisappsec.project.service.ProjectService;
 import io.github.artemiscore.artemisappsec.project.service.ProjectSummary;
 import io.github.artemiscore.artemisappsec.report.domain.Report;
 import io.github.artemiscore.artemisappsec.report.domain.ReportContent;
+import io.github.artemiscore.artemisappsec.report.domain.ReportSection;
 import io.github.artemiscore.artemisappsec.report.domain.ReportStatus;
 import io.github.artemiscore.artemisappsec.report.domain.ReportType;
 import io.github.artemiscore.artemisappsec.report.persistence.ReportRepository;
@@ -31,10 +34,8 @@ class ReportServiceImpl implements ReportService {
 	private static final String EN = ReportTexts.EN;
 	private static final String PT = ReportTexts.PT;
 
-	private static final Map<ReportType, Map<String, String>> TYPE_TITLES = Map.of(
-			ReportType.SUMMARY, Map.of(EN, "Security summary", PT, "Resumo de segurança"),
-			ReportType.COMPLIANCE, Map.of(EN, "OWASP Top 10 compliance", PT, "Conformidade OWASP Top 10"),
-			ReportType.DEPENDENCIES, Map.of(EN, "Dependencies (SBOM)", PT, "Dependências (SBOM)"));
+	private static final Map<String, String> TITLE = Map.of(EN, "Security report", PT, "Relatório de segurança");
+	private static final Set<ReportSection> DEFAULT_SECTIONS = EnumSet.of(ReportSection.SUMMARY, ReportSection.RECOMMENDATIONS);
 
 	private final ReportRepository reports;
 	private final ProjectService projects;
@@ -66,9 +67,11 @@ class ReportServiceImpl implements ReportService {
 		String scope = command.scope() == null || command.scope().isBlank() ? null : command.scope();
 		UUID projectId = scope == null ? null : projectId(organizationId, scope);
 		LocalDate[] period = command.period().lastCompleteBefore(LocalDate.now(clock));
-		Map<String, String> title = TYPE_TITLES.get(command.type()).entrySet().stream()
+		Map<String, String> title = TITLE.entrySet().stream()
 			.collect(Collectors.toMap(Map.Entry::getKey, e -> scope == null ? e.getValue() : e.getValue() + " – " + scope));
-		Report report = reports.save(Report.requested(organizationId, title, command.type(), projectId, period[0], period[1]));
+		Set<ReportSection> sections = command.sections() == null ? DEFAULT_SECTIONS : command.sections();
+		Report report = reports.save(Report.requested(organizationId, title, ReportType.SUMMARY, projectId, sections,
+				period[0], period[1]));
 		return toSummary(report, projectNames(organizationId), locale);
 	}
 
@@ -108,7 +111,7 @@ class ReportServiceImpl implements ReportService {
 
 	private static ReportSummary toSummary(Report r, Map<UUID, String> names, Locale locale) {
 		String scope = r.getProjectId() == null ? null : names.get(r.getProjectId());
-		return new ReportSummary(r.getId(), localized(r.getTitle(), locale), r.getType(), scope, r.getPeriodStart(),
+		return new ReportSummary(r.getId(), localized(r.getTitle(), locale), r.getType(), r.getSections(), scope, r.getPeriodStart(),
 				r.getPeriodEnd(), r.getGeneratedAt(), r.getGeneratedBy(), r.getStatus(), r.getError(),
 				r.getContent() == null ? null : r.getContent().narrative());
 	}
@@ -120,8 +123,10 @@ class ReportServiceImpl implements ReportService {
 		Function<Map<String, String>, String> text = m -> localized(m, locale);
 		String preferred = "pt".equals(locale.getLanguage()) ? PT : EN;
 		// AI texts exist only in the organization's language: say so when the reader uses another one.
-		String textLanguage = c.summary().containsKey(preferred) ? null : c.summary().keySet().stream().findFirst().orElse(null);
-		return new ReportDetails.Content(text.apply(c.summary()), c.kpis(), c.trend(), c.severity(), c.topRisks(), c.owasp(),
+		Map<String, String> sample = !c.summary().isEmpty() ? c.summary()
+				: c.recommendations().isEmpty() ? Map.of() : c.recommendations().getFirst();
+		String textLanguage = sample.isEmpty() || sample.containsKey(preferred) ? null : sample.keySet().iterator().next();
+		return new ReportDetails.Content(c.summary().isEmpty() ? null : text.apply(c.summary()), c.kpis(), c.trend(), c.severity(), c.topRisks(), c.owasp(),
 				c.recommendations().stream().map(text).toList(), c.narrative(), c.aiNotice(), textLanguage, c.dependencies());
 	}
 

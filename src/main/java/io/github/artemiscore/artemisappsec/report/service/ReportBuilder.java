@@ -33,7 +33,7 @@ import io.github.artemiscore.artemisappsec.project.service.ProjectService;
 import io.github.artemiscore.artemisappsec.project.service.ProjectSummary;
 import io.github.artemiscore.artemisappsec.report.domain.Report;
 import io.github.artemiscore.artemisappsec.report.domain.ReportContent;
-import io.github.artemiscore.artemisappsec.report.domain.ReportType;
+import io.github.artemiscore.artemisappsec.report.domain.ReportSection;
 import io.github.artemiscore.artemisappsec.shared.ai.ClaudeClient;
 import io.github.artemiscore.artemisappsec.shared.domain.Severity;
 
@@ -107,11 +107,11 @@ class ReportBuilder {
 		List<String> sbomPackages = new ArrayList<>();
 		ReportContent content = new ReportContent(Map.of(), kpis, trend(report.getPeriodStart(), report.getPeriodEnd(),
 				opened, fixed), severity(open), risks.stream().map(f -> topRisk(f, now)).toList(), owasp(open), List.of(),
-				null, null, report.getType() == ReportType.DEPENDENCIES ? dependencies(report, repository, open, sbomPackages) : null);
+				null, null, report.getSections().contains(ReportSection.SBOM) ? dependencies(report, repository, open, sbomPackages) : null);
 		Map<String, Long> byKind = open.stream()
 			.collect(Collectors.groupingBy(f -> f.kind().wireValue(), LinkedHashMap::new, Collectors.counting()));
 		int periodDays = (int) ChronoUnit.DAYS.between(report.getPeriodStart(), report.getPeriodEnd()) + 1;
-		return new ReportFacts(report.getType(), periodDays, content, risks, byKind, upgrades(open),
+		return new ReportFacts(report.getSections(), periodDays, content, risks, byKind, upgrades(open),
 				open.stream().filter(f -> f.kind() == FindingKind.SECRET).count(),
 				open.stream().filter(FindingSummary::overdue).count(),
 				open.stream().filter(f -> f.kind() == FindingKind.VULNERABILITY && blank(f.fixedVersion())).count(),
