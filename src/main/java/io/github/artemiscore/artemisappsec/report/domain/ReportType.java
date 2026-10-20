@@ -3,7 +3,7 @@ package io.github.artemiscore.artemisappsec.report.domain;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 public enum ReportType {
-	SUMMARY("summary"), COMPLIANCE("compliance");
+	SUMMARY("summary"), COMPLIANCE("compliance"), DEPENDENCIES("dependencies");
 
 	private final String code;
 

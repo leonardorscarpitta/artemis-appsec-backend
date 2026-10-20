@@ -63,25 +63,29 @@ class ReportNarrator {
 			}
 			ai = claude
 				.json(AiReportPayload.SYSTEM_INSTRUCTION, AiReportPayload.of(facts, Instant.now(clock), language),
-						AiReportPayload.RESPONSE_SCHEMA, AiReportPayload.MAX_TOKENS, AiReportPayload.AiText.class)
+						AiReportPayload.schema(facts), AiReportPayload.maxTokens(facts), AiReportPayload.AiText.class)
 				.flatMap(AiReportPayload::validated);
 		}
 		finally {
 			claude.release();
 		}
 		return ai.map(t -> with(facts, Map.of(language, t.summary()),
-				t.recommendations().stream().map(r -> Map.of(language, r)).toList(), Narrative.AI, null))
+				t.recommendations().stream().map(r -> Map.of(language, r)).toList(), Narrative.AI, null,
+				facts.content().dependencies() == null ? null : facts.content().dependencies()
+					.withNotes(AiReportPayload.componentNotes(t, facts), AiReportPayload.imageNotes(t, facts))))
 			.orElseGet(() -> standard(facts, AiNotice.UNAVAILABLE));
 	}
 
 	private static ReportContent standard(ReportFacts facts, AiNotice notice) {
-		return with(facts, ReportTexts.summary(facts), ReportTexts.recommendations(facts), Narrative.ARTEMIS, notice);
+		return with(facts, ReportTexts.summary(facts), ReportTexts.recommendations(facts), Narrative.ARTEMIS, notice,
+				facts.content().dependencies());
 	}
 
 	private static ReportContent with(ReportFacts facts, Map<String, String> summary,
-			List<Map<String, String>> recommendations, Narrative narrative, AiNotice notice) {
+			List<Map<String, String>> recommendations, Narrative narrative, AiNotice notice,
+			ReportContent.Dependencies dependencies) {
 		ReportContent c = facts.content();
 		return new ReportContent(summary, c.kpis(), c.trend(), c.severity(), c.topRisks(), c.owasp(), recommendations,
-				narrative, notice);
+				narrative, notice, dependencies);
 	}
 }

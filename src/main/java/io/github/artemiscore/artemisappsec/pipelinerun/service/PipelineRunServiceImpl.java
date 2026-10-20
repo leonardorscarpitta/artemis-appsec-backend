@@ -253,6 +253,16 @@ class PipelineRunServiceImpl implements PipelineRunService {
 	}
 
 	@Override
+	public List<LatestSbom> latestSboms(UUID organizationId, String repository) {
+		Map<UUID, ProjectSummary> connected = projectNames(organizationId).values().stream()
+			.filter(p -> !p.removed() && (repository == null || p.name().equals(repository)))
+			.collect(Collectors.toMap(ProjectSummary::id, p -> p));
+		return sboms.latestPerProject(connected.keySet()).stream()
+			.map(l -> new LatestSbom(connected.get(l.projectId()).name(), l.runNumber(), l.startedAt(), l.folder(), l.gzipped()))
+			.toList();
+	}
+
+	@Override
 	@Transactional
 	public void complete(UUID runId) {
 		PipelineRun run = loadById(runId);

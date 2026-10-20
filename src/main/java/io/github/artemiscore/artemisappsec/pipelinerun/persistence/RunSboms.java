@@ -1,5 +1,7 @@
 package io.github.artemiscore.artemisappsec.pipelinerun.persistence;
 
+import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -15,6 +17,9 @@ public class RunSboms {
 	}
 
 	public record Content(byte[] gzipped, int sizeBytes) {
+	}
+
+	public record Latest(UUID projectId, long runNumber, Instant startedAt, String folder, byte[] gzipped) {
 	}
 
 	private final JdbcClient jdbc;
@@ -52,5 +57,27 @@ public class RunSboms {
 			.param("folder", folder)
 			.query((rs, i) -> new Content(rs.getBytes(1), rs.getInt(2)))
 			.optional();
+	}
+
+	/** Every SBOM of the most recent run with SBOMs of each project. */
+	public List<Latest> latestPerProject(Collection<UUID> projectIds) {
+		if (projectIds.isEmpty()) {
+			return List.of();
+		}
+		return jdbc.sql("""
+				SELECT r.project_id, r.number, r.started_at, s.folder, s.content
+				FROM pipeline_run_sbom s JOIN pipeline_run r ON r.id = s.run_id
+				WHERE r.id IN (
+				    SELECT DISTINCT ON (r2.project_id) r2.id
+				    FROM pipeline_run r2
+				    WHERE r2.project_id IN (:projects)
+				      AND EXISTS (SELECT 1 FROM pipeline_run_sbom s2 WHERE s2.run_id = r2.id)
+				    ORDER BY r2.project_id, r2.number DESC)
+				ORDER BY r.project_id, s.folder
+				""")
+			.param("projects", projectIds)
+			.query((rs, i) -> new Latest(rs.getObject(1, UUID.class), rs.getLong(2),
+					rs.getTimestamp(3).toInstant(), rs.getString(4), rs.getBytes(5)))
+			.list();
 	}
 }
