@@ -14,8 +14,11 @@ public record ArtemisAppSecProperties(Security security, Cors cors, Scanner scan
 	 * @param anthropicApiKey AI is disabled when blank
 	 * @param reportsPerDay AI-written reports per organization per UTC day; later ones use the standard texts
 	 * @param insightsPerDay newly generated finding explanations per organization per UTC day (cached ones are free)
+	 * @param sbomMaxPackages dependencies listed for the AI supply chain review of the SBOM topic (0 = none; at most
+	 *        5000, to stay well below 100k input tokens)
 	 */
-	public record Ai(String anthropicApiKey, String model, int timeoutSeconds, int reportsPerDay, int insightsPerDay) {
+	public record Ai(String anthropicApiKey, String model, int timeoutSeconds, int reportsPerDay, int insightsPerDay,
+			int sbomMaxPackages) {
 
 		public Ai {
 			anthropicApiKey = anthropicApiKey == null ? "" : anthropicApiKey.strip();
@@ -23,6 +26,7 @@ public record ArtemisAppSecProperties(Security security, Cors cors, Scanner scan
 			timeoutSeconds = timeoutSeconds > 0 ? timeoutSeconds : 60;
 			reportsPerDay = reportsPerDay >= 0 ? reportsPerDay : 10;
 			insightsPerDay = insightsPerDay >= 0 ? insightsPerDay : 50;
+			sbomMaxPackages = sbomMaxPackages < 0 ? 200 : Math.min(sbomMaxPackages, 5000);
 		}
 
 		public boolean enabled() {
