@@ -6,12 +6,16 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import io.github.artemiscore.artemisappsec.finding.domain.FindingKind;
 import io.github.artemiscore.artemisappsec.finding.service.FindingSummary;
 import io.github.artemiscore.artemisappsec.report.domain.ReportContent;
+import io.github.artemiscore.artemisappsec.report.domain.ReportContent.ComponentNote;
+import io.github.artemiscore.artemisappsec.report.domain.ReportContent.ImageNote;
 import io.github.artemiscore.artemisappsec.shared.ai.ClaudeClient;
 
 /**
@@ -25,6 +29,7 @@ final class AiReportPayload {
 
 	private static final int MAX_TITLE = 70;
 	private static final int MAX_RISKS = 8;
+	private static final Pattern LICENSE_LIKE = Pattern.compile("[A-Za-z0-9.+()\\- ]{1,64}");
 
 	/** A small output cap keeps each report to roughly a thousand or two tokens. */
 	static final long MAX_TOKENS = 1024;
@@ -37,12 +42,38 @@ final class AiReportPayload {
 			"properties", Map.of("summary", TEXT, "recommendations", Map.of("type", "array", "items", TEXT)),
 			"required", List.of("summary", "recommendations"), "additionalProperties", false);
 
+	private static final int MAX_NOTES = 8;
+	private static final int MAX_NOTE = 240;
+	private static final Map<String, Object> DEPENDENCY_SCHEMA = Map.of("type", "object",
+			"properties", Map.of("summary", TEXT, "recommendations", Map.of("type", "array", "items", TEXT),
+					"components", Map.of("type", "array", "items", Map.of("type", "object",
+							"properties", Map.of("pkg", TEXT, "concern", Map.of("type", "string", "enum", ComponentNote.CONCERNS),
+									"note", TEXT),
+							"required", List.of("pkg", "concern", "note"), "additionalProperties", false)),
+					"images", Map.of("type", "array", "items", Map.of("type", "object",
+							"properties", Map.of("ref", TEXT, "standing", Map.of("type", "string", "enum", ImageNote.STANDINGS),
+									"note", TEXT),
+							"required", List.of("ref", "standing", "note"), "additionalProperties", false))),
+			"required", List.of("summary", "recommendations", "components", "images"), "additionalProperties", false);
+
+	/** Dependency reports also carry component and image notes. */
+	static long maxTokens(ReportFacts facts) {
+		return facts.content().dependencies() != null ? 1536 : MAX_TOKENS;
+	}
+
+	static Map<String, Object> schema(ReportFacts facts) {
+		return facts.content().dependencies() != null ? DEPENDENCY_SCHEMA : RESPONSE_SCHEMA;
+	}
+
 	private AiReportPayload() {
 	}
 
 	/** Compact on purpose: every field costs tokens. */
 	static Map<String, Object> of(ReportFacts facts, Instant now, String language) {
 		ReportContent c = facts.content();
+		if (c.dependencies() != null) {
+			return dependencies(c.dependencies(), facts.sbomPackages(), language);
+		}
 		Map<String, Object> payload = new LinkedHashMap<>();
 		payload.put("lang", language);
 		payload.put("type", facts.type().code());
@@ -60,6 +91,55 @@ final class AiReportPayload {
 		payload.put("owasp", owasp);
 		payload.put("risks", facts.risks().stream().limit(MAX_RISKS).map(f -> risk(f, now)).toList());
 		return payload;
+	}
+
+	/**
+	 * Dependency reports: aggregate counts, SPDX license ids and only the vulnerable components (public package names
+	 * with advisories), never the full component list or repository names.
+	 */
+	private static Map<String, Object> dependencies(ReportContent.Dependencies d, List<String> packages, String language) {
+		Map<String, Object> payload = new LinkedHashMap<>();
+		payload.put("lang", language);
+		payload.put("type", "dependencies");
+		payload.put("repos", d.repositories().size());
+		payload.put("reposWithoutSbom", d.withoutSbom().size());
+		payload.put("components", d.components());
+		payload.put("unique", d.unique());
+		payload.put("noLicense", d.withoutLicense());
+		Map<String, Integer> ecosystems = new LinkedHashMap<>();
+		d.ecosystems().forEach((k, v) -> {
+			if (LICENSE_LIKE.matcher(k).matches()) {
+				ecosystems.put(k, v);
+			}
+		});
+		payload.put("ecosystems", ecosystems);
+		// License names come from package metadata: only identifier-like values (SPDX ids and expressions) are sent.
+		Map<String, Integer> licenses = new LinkedHashMap<>();
+		d.licenses().stream().filter(l -> LICENSE_LIKE.matcher(l.license()).matches())
+			.forEach(l -> licenses.put(l.license(), l.components()));
+		payload.put("licenses", licenses);
+		payload.put("vulnerable", d.vulnerable());
+		payload.put("vulnerableTop", d.vulnerableComponents().stream().limit(MAX_RISKS).map(v -> {
+			Map<String, Object> item = new LinkedHashMap<>();
+			item.put("pkg", ClaudeClient.packageRef(v.name(), v.version(), v.fixedVersion()));
+			item.put("sev", v.severity());
+			item.put("n", v.vulnerabilities());
+			item.put("ids", v.ids());
+			item.values().removeIf(x -> x == null);
+			return item;
+		}).toList());
+		payload.put("images", images(d));
+		payload.put("pkgs", packages);
+		return payload;
+	}
+
+	/** Published container images (public registry references) of the repositories in the report. */
+	private static List<String> images(ReportContent.Dependencies d) {
+		return d.repositories().stream()
+			.map(r -> ClaudeClient.safeIdentifier(r.image()))
+			.filter(i -> i != null)
+			.distinct()
+			.toList();
 	}
 
 	private static Map<String, Object> risk(FindingSummary f, Instant now) {
@@ -99,10 +179,44 @@ final class AiReportPayload {
 			summary: executive summary, max 80 words;
 			recommendations: 3-5, most urgent first, max 25 words each, citing ids, packages and fixed versions (pkg is name@installed→fixed).
 			Type "compliance": frame by OWASP 2021 category (owasp = category id → open findings).
+			Type "dependencies": summarize the SBOM supply chain. recommendations: upgrades from vulnerableTop, license review, risky components.
+			components: only pkgs entries (copy pkg exactly) that deserve attention: little-known publisher, low adoption, typosquat-like name, unmaintained or deprecated; max 8, note max 20 words; [] if none. Never flag well-known widely used packages.
+			images: one per images entry (copy ref exactly): official, widely-used or unknown, note max 15 words.
 			Write in the language of "lang" (en-US English, pt-BR Brazilian Portuguese). Plain text, no markdown.""";
 
 	@JsonIgnoreProperties(ignoreUnknown = true)
-	record AiText(String summary, List<String> recommendations) {
+	record AiText(String summary, List<String> recommendations, List<AiComponent> components, List<AiImage> images) {
+	}
+
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	record AiComponent(String pkg, String concern, String note) {
+	}
+
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	record AiImage(String ref, String standing, String note) {
+	}
+
+	/** Keeps only notes about components and images that were sent, with known categories. */
+	static List<ComponentNote> componentNotes(AiText text, ReportFacts facts) {
+		Set<String> sent = Set.copyOf(facts.sbomPackages());
+		return text.components() == null ? List.of() : text.components().stream()
+			.filter(c -> c != null && sent.contains(c.pkg()) && ComponentNote.CONCERNS.contains(c.concern()))
+			.map(c -> new ComponentNote(c.pkg(), c.concern(), ClaudeClient.clean(c.note(), MAX_NOTE)))
+			.filter(c -> c.note() != null)
+			.distinct()
+			.limit(MAX_NOTES)
+			.toList();
+	}
+
+	static List<ImageNote> imageNotes(AiText text, ReportFacts facts) {
+		Set<String> sent = Set.copyOf(images(facts.content().dependencies()));
+		return text.images() == null ? List.of() : text.images().stream()
+			.filter(i -> i != null && sent.contains(i.ref()) && ImageNote.STANDINGS.contains(i.standing()))
+			.map(i -> new ImageNote(i.ref(), i.standing(), ClaudeClient.clean(i.note(), MAX_NOTE)))
+			.filter(i -> i.note() != null)
+			.distinct()
+			.limit(MAX_NOTES)
+			.toList();
 	}
 
 	static Optional<AiText> validated(AiText text) {
@@ -117,6 +231,6 @@ final class AiReportPayload {
 		if (summary == null || recs.contains(null)) {
 			return Optional.empty();
 		}
-		return Optional.of(new AiText(summary, recs));
+		return Optional.of(new AiText(summary, recs, text.components(), text.images()));
 	}
 }

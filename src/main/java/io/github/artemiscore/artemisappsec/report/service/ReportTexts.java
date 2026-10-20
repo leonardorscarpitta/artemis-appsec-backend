@@ -23,6 +23,9 @@ final class ReportTexts {
 
 	static Map<String, String> summary(ReportFacts facts) {
 		ReportContent c = facts.content();
+		if (c.dependencies() != null) {
+			return dependencySummary(c.dependencies());
+		}
 		ReportContent.Kpis k = c.kpis();
 		int critical = c.severity().getOrDefault("critical", 0);
 		int high = c.severity().getOrDefault("high", 0);
@@ -64,6 +67,9 @@ final class ReportTexts {
 	}
 
 	static List<Map<String, String>> recommendations(ReportFacts facts) {
+		if (facts.content().dependencies() != null) {
+			return dependencyRecommendations(facts.content().dependencies());
+		}
 		List<Map<String, String>> recs = new ArrayList<>();
 		if (facts.overdue() > 0) {
 			recs.add(text("%s past the remediation deadline (SLA): fix them first.".formatted(
@@ -105,6 +111,58 @@ final class ReportTexts {
 		if (recs.isEmpty()) {
 			recs.add(text("No open findings need action: keep scanning regularly and keep the pipeline gates enabled.",
 					"Nenhum achado aberto exige ação: continue analisando com frequência e mantenha os gates do pipeline ativos."));
+		}
+		return recs.size() > MAX_RECOMMENDATIONS ? recs.subList(0, MAX_RECOMMENDATIONS) : recs;
+	}
+
+	private static Map<String, String> dependencySummary(ReportContent.Dependencies d) {
+		int repos = d.repositories().size();
+		if (repos == 0) {
+			return text("No SBOM is available yet: run a scan with the SBOM stage enabled.",
+					"Nenhum SBOM disponível ainda: execute uma análise com a etapa SBOM ativada.");
+		}
+		StringBuilder en = new StringBuilder("The latest SBOM of %s lists %s (%d unique).".formatted(
+				plural(repos, "repository", "repositories"), plural(d.components(), "component", "components"), d.unique()));
+		StringBuilder pt = new StringBuilder("O SBOM mais recente de %s lista %s (%d %s).".formatted(
+				plural(repos, "repositório", "repositórios"), plural(d.components(), "componente", "componentes"), d.unique(),
+				d.unique() == 1 ? "único" : "únicos"));
+		en.append(" %s open vulnerabilities".formatted(plural(d.vulnerable(), "component has", "components have")));
+		pt.append(" %s vulnerabilidades abertas".formatted(plural(d.vulnerable(), "componente tem", "componentes têm")));
+		en.append(" and %d %s no declared license.".formatted(d.withoutLicense(), d.withoutLicense() == 1 ? "has" : "have"));
+		pt.append(" e %d sem licença declarada.".formatted(d.withoutLicense()));
+		if (!d.licenses().isEmpty()) {
+			ReportContent.LicenseCount top = d.licenses().getFirst();
+			en.append(" Most common license: %s (%d).".formatted(top.license(), top.components()));
+			pt.append(" Licença mais comum: %s (%d).".formatted(top.license(), top.components()));
+		}
+		return Map.of(EN, en.toString(), PT, pt.toString());
+	}
+
+	private static List<Map<String, String>> dependencyRecommendations(ReportContent.Dependencies d) {
+		List<Map<String, String>> recs = new ArrayList<>();
+		d.vulnerableComponents().stream().limit(3).forEach(v -> {
+			String ids = String.join(", ", v.ids());
+			recs.add(v.fixedVersion() != null
+					? text("Upgrade %s %s to %s or later (%s).".formatted(v.name(), v.version(), v.fixedVersion(), ids),
+							"Atualize %s %s para %s ou posterior (%s).".formatted(v.name(), v.version(), v.fixedVersion(), ids))
+					: text("%s %s has no fixed version yet (%s): assess exposure or replace it.".formatted(v.name(), v.version(), ids),
+							"%s %s ainda não tem versão corrigida (%s): avalie a exposição ou substitua-o.".formatted(v.name(), v.version(), ids)));
+		});
+		if (d.withoutLicense() > 0) {
+			recs.add(text("Review the %s without a declared license before distributing the software.".formatted(
+					plural(d.withoutLicense(), "component", "components")),
+					"Revise %s sem licença declarada antes de distribuir o software.".formatted(
+					d.withoutLicense() == 1 ? "o componente" : "os %d componentes".formatted(d.withoutLicense()))));
+		}
+		if (!d.withoutSbom().isEmpty()) {
+			recs.add(text("Enable the SBOM stage and scan %s without an SBOM.".formatted(
+					d.withoutSbom().size() == 1 ? "the repository" : "the %d repositories".formatted(d.withoutSbom().size())),
+					"Ative a etapa SBOM e analise %s sem SBOM.".formatted(
+					d.withoutSbom().size() == 1 ? "o repositório" : "os %d repositórios".formatted(d.withoutSbom().size()))));
+		}
+		if (recs.isEmpty()) {
+			recs.add(text("No dependency needs action: keep the SBOM stage enabled and scan regularly.",
+					"Nenhuma dependência exige ação: mantenha a etapa SBOM ativa e analise com frequência."));
 		}
 		return recs.size() > MAX_RECOMMENDATIONS ? recs.subList(0, MAX_RECOMMENDATIONS) : recs;
 	}

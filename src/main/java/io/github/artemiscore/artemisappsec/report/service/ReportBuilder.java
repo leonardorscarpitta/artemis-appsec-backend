@@ -10,9 +10,13 @@ import java.time.temporal.IsoFields;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -23,10 +27,14 @@ import io.github.artemiscore.artemisappsec.finding.domain.FindingStatus;
 import io.github.artemiscore.artemisappsec.finding.service.FindingQuery;
 import io.github.artemiscore.artemisappsec.finding.service.FindingService;
 import io.github.artemiscore.artemisappsec.finding.service.FindingSummary;
+import io.github.artemiscore.artemisappsec.pipelinerun.service.LatestSbom;
+import io.github.artemiscore.artemisappsec.pipelinerun.service.PipelineRunService;
 import io.github.artemiscore.artemisappsec.project.service.ProjectService;
 import io.github.artemiscore.artemisappsec.project.service.ProjectSummary;
 import io.github.artemiscore.artemisappsec.report.domain.Report;
 import io.github.artemiscore.artemisappsec.report.domain.ReportContent;
+import io.github.artemiscore.artemisappsec.report.domain.ReportType;
+import io.github.artemiscore.artemisappsec.shared.ai.ClaudeClient;
 import io.github.artemiscore.artemisappsec.shared.domain.Severity;
 
 /**
@@ -39,14 +47,23 @@ class ReportBuilder {
 
 	static final int TOP_RISKS = 15;
 	private static final int UPGRADES = 3;
+	private static final int LICENSES = 10;
+	private static final int VULNERABLE_COMPONENTS = 25;
+	private static final int IDS_PER_COMPONENT = 3;
+	/** Components listed for the AI supply-chain review: about 12 tokens each. */
+	private static final int AI_PACKAGES = 200;
+	private static final Set<String> PUBLIC_ECOSYSTEMS = Set.of("npm", "maven", "pypi", "golang", "cargo", "gem",
+			"nuget", "composer", "deb", "apk", "rpm", "hex", "pub", "cocoapods", "swift", "conan", "github");
 
 	private final FindingService findings;
 	private final ProjectService projects;
+	private final PipelineRunService runs;
 	private final Clock clock = Clock.systemUTC();
 
-	ReportBuilder(FindingService findings, ProjectService projects) {
+	ReportBuilder(FindingService findings, ProjectService projects, PipelineRunService runs) {
 		this.findings = findings;
 		this.projects = projects;
+		this.runs = runs;
 	}
 
 	ReportFacts build(Report report) {
@@ -87,16 +104,141 @@ class ReportBuilder {
 			.limit(TOP_RISKS)
 			.toList();
 
+		List<String> sbomPackages = new ArrayList<>();
 		ReportContent content = new ReportContent(Map.of(), kpis, trend(report.getPeriodStart(), report.getPeriodEnd(),
 				opened, fixed), severity(open), risks.stream().map(f -> topRisk(f, now)).toList(), owasp(open), List.of(),
-				null, null);
+				null, null, report.getType() == ReportType.DEPENDENCIES ? dependencies(report, repository, open, sbomPackages) : null);
 		Map<String, Long> byKind = open.stream()
 			.collect(Collectors.groupingBy(f -> f.kind().wireValue(), LinkedHashMap::new, Collectors.counting()));
 		int periodDays = (int) ChronoUnit.DAYS.between(report.getPeriodStart(), report.getPeriodEnd()) + 1;
 		return new ReportFacts(report.getType(), periodDays, content, risks, byKind, upgrades(open),
 				open.stream().filter(f -> f.kind() == FindingKind.SECRET).count(),
 				open.stream().filter(FindingSummary::overdue).count(),
-				open.stream().filter(f -> f.kind() == FindingKind.VULNERABILITY && blank(f.fixedVersion())).count());
+				open.stream().filter(f -> f.kind() == FindingKind.VULNERABILITY && blank(f.fixedVersion())).count(),
+				sbomPackages);
+	}
+
+	/**
+	 * Components of each connected repository's latest SBOM; a component is vulnerable when an open vulnerability
+	 * finding of the same repository names its package and version.
+	 */
+	private ReportContent.Dependencies dependencies(Report report, String repository, List<FindingSummary> open,
+			List<String> sbomPackages) {
+		List<LatestSbom> sboms = runs.latestSboms(report.getOrganizationId(), repository);
+		Map<String, List<FindingSummary>> vulnerabilities = open.stream()
+			.filter(f -> f.kind() == FindingKind.VULNERABILITY && !blank(f.packageName()) && !blank(f.installedVersion()))
+			.collect(Collectors.groupingBy(f -> componentKey(f.repository(), f.packageName(), f.installedVersion())));
+
+		Map<String, List<LatestSbom>> byRepository = sboms.stream()
+			.collect(Collectors.groupingBy(LatestSbom::repository, LinkedHashMap::new, Collectors.toList()));
+		Set<String> unique = new HashSet<>();
+		Map<String, Integer> ecosystems = new LinkedHashMap<>();
+		Map<String, Integer> licenses = new LinkedHashMap<>();
+		List<ReportContent.DependencyRepository> repositories = new ArrayList<>();
+		List<ReportContent.VulnerableComponent> vulnerable = new ArrayList<>();
+		Set<String> vulnerablePackages = new TreeSet<>();
+		Set<String> otherPackages = new TreeSet<>();
+		Map<String, String> images = projects.findAll(report.getOrganizationId()).stream()
+			.filter(p -> p.containerImage() != null && !p.containerImage().isBlank())
+			.collect(Collectors.toMap(ProjectSummary::name, ProjectSummary::containerImage, (a, b) -> a));
+		int total = 0;
+		int withoutLicense = 0;
+		for (Map.Entry<String, List<LatestSbom>> entry : byRepository.entrySet()) {
+			String name = entry.getKey();
+			Set<String> seen = new HashSet<>();
+			int repoComponents = 0;
+			int repoVulnerable = 0;
+			int repoWithoutLicense = 0;
+			for (LatestSbom sbom : entry.getValue()) {
+				for (SbomDigest.Component c : SbomDigest.components(sbom.gzipped())) {
+					String version = c.version() == null ? "" : c.version();
+					// Monorepo folders may list the same component: count it once per repository.
+					if (!seen.add(c.ecosystem() + "|" + c.group() + "|" + c.name() + "|" + version)) {
+						continue;
+					}
+					repoComponents++;
+					unique.add(c.ecosystem() + "|" + c.group() + "|" + c.name() + "|" + version);
+					ecosystems.merge(c.ecosystem(), 1, Integer::sum);
+					if (c.license() == null) {
+						repoWithoutLicense++;
+					}
+					else {
+						licenses.merge(c.license(), 1, Integer::sum);
+					}
+					List<FindingSummary> matched = new ArrayList<>(vulnerabilities.getOrDefault(componentKey(name, c.name(), version), List.of()));
+					if (c.group() != null) {
+						matched.addAll(vulnerabilities.getOrDefault(componentKey(name, c.group() + ":" + c.name(), version), List.of()));
+					}
+					String ref = PUBLIC_ECOSYSTEMS.contains(c.ecosystem()) ? publicRef(c, version) : null;
+					if (!matched.isEmpty()) {
+						repoVulnerable++;
+						vulnerable.add(vulnerableComponent(name, c.name(), version, matched));
+						if (ref != null) {
+							vulnerablePackages.add(ref);
+						}
+					}
+					else if (ref != null) {
+						otherPackages.add(ref);
+					}
+				}
+			}
+			total += repoComponents;
+			withoutLicense += repoWithoutLicense;
+			LatestSbom first = entry.getValue().getFirst();
+			repositories.add(new ReportContent.DependencyRepository(name, first.runNumber(), first.scannedAt(),
+					entry.getValue().stream().map(LatestSbom::folder).filter(f -> !f.isEmpty()).toList(), repoComponents,
+					repoVulnerable, repoWithoutLicense, images.get(name)));
+		}
+		vulnerablePackages.stream().limit(AI_PACKAGES).forEach(sbomPackages::add);
+		otherPackages.stream().filter(p -> !vulnerablePackages.contains(p)).limit(Math.max(0, AI_PACKAGES - sbomPackages.size()))
+			.forEach(sbomPackages::add);
+		List<String> withoutSbom = projects.findAll(report.getOrganizationId()).stream()
+			.map(ProjectSummary::name)
+			.filter(n -> (repository == null || n.equals(repository)) && !byRepository.containsKey(n))
+			.sorted()
+			.toList();
+		int vulnerableCount = vulnerable.size();
+		vulnerable.sort(Comparator.comparingInt((ReportContent.VulnerableComponent v) -> Severity.valueOf(v.severity().toUpperCase(Locale.ROOT)).ordinal())
+			.thenComparing(Comparator.comparingInt(ReportContent.VulnerableComponent::vulnerabilities).reversed()));
+		return new ReportContent.Dependencies(total, unique.size(), vulnerableCount, withoutLicense, sortedDesc(ecosystems, Integer.MAX_VALUE),
+				sortedDesc(licenses, LICENSES).entrySet().stream().map(e -> new ReportContent.LicenseCount(e.getKey(), e.getValue())).toList(),
+				repositories, vulnerable.size() > VULNERABLE_COMPONENTS ? List.copyOf(vulnerable.subList(0, VULNERABLE_COMPONENTS)) : vulnerable,
+				withoutSbom, null, null);
+	}
+
+	/** {@code ecosystem:name@version} (Maven: {@code maven:group:artifact@version}), or null when a part is not identifier-like. */
+	private static String publicRef(SbomDigest.Component c, String version) {
+		String name = c.group() != null ? c.group() + ":" + c.name() : c.name();
+		String ref = ClaudeClient.packageRef(name, version.isEmpty() ? null : version, null);
+		return ref == null ? null : c.ecosystem() + ":" + ref;
+	}
+
+	private static ReportContent.VulnerableComponent vulnerableComponent(String repository, String name, String version,
+			List<FindingSummary> matched) {
+		FindingSummary worst = matched.stream().min(Comparator.comparingInt(f -> f.severity().ordinal())).orElseThrow();
+		String fixed = !blank(worst.fixedVersion()) ? worst.fixedVersion()
+				: matched.stream().map(FindingSummary::fixedVersion).filter(v -> !blank(v)).findFirst().orElse(null);
+		List<String> ids = matched.stream()
+			.map(f -> f.cve() != null ? f.cve() : f.ruleId())
+			.filter(id -> !blank(id))
+			.distinct()
+			.limit(IDS_PER_COMPONENT)
+			.toList();
+		return new ReportContent.VulnerableComponent(repository, name, version, fixed, worst.severity().wireValue(),
+				matched.size(), ids);
+	}
+
+	private static String componentKey(String repository, String packageName, String version) {
+		return repository + "|" + packageName.toLowerCase(Locale.ROOT) + "|" + version;
+	}
+
+	private static Map<String, Integer> sortedDesc(Map<String, Integer> counts, int limit) {
+		Map<String, Integer> sorted = new LinkedHashMap<>();
+		counts.entrySet().stream()
+			.sorted(Map.Entry.<String, Integer>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()))
+			.limit(limit)
+			.forEach(e -> sorted.put(e.getKey(), e.getValue()));
+		return sorted;
 	}
 
 	/** Share of findings with an SLA that are open within it or were fixed in the period before their deadline. */

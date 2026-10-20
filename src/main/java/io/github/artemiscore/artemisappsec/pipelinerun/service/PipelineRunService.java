@@ -29,6 +29,12 @@ public interface PipelineRunService {
 	/** The SBOM stored for {@code folder} (empty = whole repository) of a run of the organization; 404 when there is none. */
 	SbomFile sbom(UUID organizationId, long number, String folder);
 
+	/**
+	 * The SBOMs of the most recent run that produced SBOMs, for each connected repository of the organization (or only
+	 * {@code repository} when not null).
+	 */
+	List<LatestSbom> latestSboms(UUID organizationId, String repository);
+
 	/** Cancels the queued and running runs of a repository (it was removed); returns how many. */
 	int cancelActive(UUID projectId);
 
