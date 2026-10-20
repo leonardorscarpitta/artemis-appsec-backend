@@ -35,6 +35,7 @@ import io.github.artemiscore.artemisappsec.report.domain.Report;
 import io.github.artemiscore.artemisappsec.report.domain.ReportContent;
 import io.github.artemiscore.artemisappsec.report.domain.ReportSection;
 import io.github.artemiscore.artemisappsec.shared.ai.ClaudeClient;
+import io.github.artemiscore.artemisappsec.shared.config.ArtemisAppSecProperties;
 import io.github.artemiscore.artemisappsec.shared.domain.Severity;
 
 /**
@@ -50,20 +51,22 @@ class ReportBuilder {
 	private static final int LICENSES = 10;
 	private static final int VULNERABLE_COMPONENTS = 25;
 	private static final int IDS_PER_COMPONENT = 3;
-	/** Components listed for the AI supply-chain review: about 12 tokens each. */
-	private static final int AI_PACKAGES = 200;
 	private static final Set<String> PUBLIC_ECOSYSTEMS = Set.of("npm", "maven", "pypi", "golang", "cargo", "gem",
 			"nuget", "composer", "deb", "apk", "rpm", "hex", "pub", "cocoapods", "swift", "conan", "github");
 
 	private final FindingService findings;
 	private final ProjectService projects;
 	private final PipelineRunService runs;
+	/** Components listed for the AI supply-chain review: about 12 tokens each. */
+	private final int aiPackages;
 	private final Clock clock = Clock.systemUTC();
 
-	ReportBuilder(FindingService findings, ProjectService projects, PipelineRunService runs) {
+	ReportBuilder(FindingService findings, ProjectService projects, PipelineRunService runs,
+			ArtemisAppSecProperties properties) {
 		this.findings = findings;
 		this.projects = projects;
 		this.runs = runs;
+		this.aiPackages = properties.ai().sbomMaxPackages();
 	}
 
 	ReportFacts build(Report report) {
@@ -189,8 +192,8 @@ class ReportBuilder {
 					entry.getValue().stream().map(LatestSbom::folder).filter(f -> !f.isEmpty()).toList(), repoComponents,
 					repoVulnerable, repoWithoutLicense, images.get(name)));
 		}
-		vulnerablePackages.stream().limit(AI_PACKAGES).forEach(sbomPackages::add);
-		otherPackages.stream().filter(p -> !vulnerablePackages.contains(p)).limit(Math.max(0, AI_PACKAGES - sbomPackages.size()))
+		vulnerablePackages.stream().limit(aiPackages).forEach(sbomPackages::add);
+		otherPackages.stream().filter(p -> !vulnerablePackages.contains(p)).limit(Math.max(0, aiPackages - sbomPackages.size()))
 			.forEach(sbomPackages::add);
 		List<String> withoutSbom = projects.findAll(report.getOrganizationId()).stream()
 			.map(ProjectSummary::name)
