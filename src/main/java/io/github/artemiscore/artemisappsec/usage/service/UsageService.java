@@ -6,8 +6,8 @@ import java.util.UUID;
 /** Each organization's monthly scan quota. */
 public interface UsageService {
 
-	/** Pipeline runs allowed per organization and calendar month (UTC). */
-	int MONTHLY_SCAN_LIMIT = 25;
+	/** Pipeline runs allowed per organization and calendar month (UTC), from {@code SCANS_PER_MONTH}. */
+	int monthlyScanLimit();
 
 	UsageOverview overview(UUID organizationId);
 
