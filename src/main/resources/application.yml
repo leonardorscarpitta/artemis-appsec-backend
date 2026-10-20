@@ -70,6 +70,9 @@ artemisappsec:
     client-id: ${KEYCLOAK_ADMIN_API_CLIENT_ID:artemisappsec-admin-api}
     client-secret: ${KEYCLOAK_ADMIN_API_CLIENT_SECRET:}
   # AI-written report summaries and finding explanations for organizations with the AI feature (Claude API; disabled without a key).
+  # Pipeline runs allowed per organization and calendar month (UTC).
+  usage:
+    scans-per-month: ${SCANS_PER_MONTH:40}
   ai:
     anthropic-api-key: ${ANTHROPIC_API_KEY:}
     model: ${ANTHROPIC_MODEL:claude-haiku-5-5}

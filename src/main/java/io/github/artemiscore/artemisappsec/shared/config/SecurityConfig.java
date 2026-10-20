@@ -34,7 +34,7 @@ public class SecurityConfig {
 
 	private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
 
-	private static final String[] PUBLIC_PATHS = { "/actuator/health/**", "/actuator/info", "/api/docs/**" };
+	private static final String[] PUBLIC_PATHS = { "/actuator/health/**", "/actuator/info", "/api/docs/**", "/api/v1/limits" };
 
 	/** Keycloak realm role of the Artemis administrators; it grants no organization membership. */
 	public static final String PLATFORM_ADMIN_ROLE = "artemis-admin";

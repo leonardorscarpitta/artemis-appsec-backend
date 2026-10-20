@@ -6,7 +6,15 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "artemisappsec")
 public record ArtemisAppSecProperties(Security security, Cors cors, Scanner scanner, DeployKeys deployKeys,
-		KeycloakAdmin keycloakAdmin, Ai ai) {
+		KeycloakAdmin keycloakAdmin, Ai ai, Usage usage) {
+
+	/** @param scansPerMonth pipeline runs allowed per organization and calendar month (UTC), at least 1 */
+	public record Usage(int scansPerMonth) {
+
+		public Usage {
+			scansPerMonth = scansPerMonth > 0 ? scansPerMonth : 40;
+		}
+	}
 
 	/**
 	 * AI-written report narratives and finding explanations (Claude API).
