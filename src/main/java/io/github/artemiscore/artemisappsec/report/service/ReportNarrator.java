@@ -17,6 +17,7 @@ import io.github.artemiscore.artemisappsec.report.domain.Report;
 import io.github.artemiscore.artemisappsec.report.domain.ReportContent;
 import io.github.artemiscore.artemisappsec.report.domain.ReportContent.AiNotice;
 import io.github.artemiscore.artemisappsec.report.domain.ReportContent.Narrative;
+import io.github.artemiscore.artemisappsec.report.domain.ReportSection;
 import io.github.artemiscore.artemisappsec.shared.ai.AiUsageCounter;
 import io.github.artemiscore.artemisappsec.shared.ai.ClaudeClient;
 import io.github.artemiscore.artemisappsec.shared.config.ArtemisAppSecProperties;
@@ -45,7 +46,7 @@ class ReportNarrator {
 	}
 
 	ReportContent write(Report report, ReportFacts facts) {
-		if (!features.isEnabled(report.getOrganizationId(), Feature.AI_TRIAGE)) {
+		if (!AiReportPayload.needed(facts) || !features.isEnabled(report.getOrganizationId(), Feature.AI_TRIAGE)) {
 			return standard(facts, null);
 		}
 		if (!claude.configured()) {
@@ -64,21 +65,24 @@ class ReportNarrator {
 			ai = claude
 				.json(AiReportPayload.SYSTEM_INSTRUCTION, AiReportPayload.of(facts, Instant.now(clock), language),
 						AiReportPayload.schema(facts), AiReportPayload.maxTokens(facts), AiReportPayload.AiText.class)
-				.flatMap(AiReportPayload::validated);
+				.flatMap(t -> AiReportPayload.validated(t, facts));
 		}
 		finally {
 			claude.release();
 		}
-		return ai.map(t -> with(facts, Map.of(language, t.summary()),
-				t.recommendations().stream().map(r -> Map.of(language, r)).toList(), Narrative.AI, null,
+		return ai.map(t -> with(facts, t.summary() == null ? Map.of() : Map.of(language, t.summary()),
+				t.recommendations() == null ? List.of() : t.recommendations().stream().map(r -> Map.of(language, r)).toList(),
+				Narrative.AI, null,
 				facts.content().dependencies() == null ? null : facts.content().dependencies()
 					.withNotes(AiReportPayload.componentNotes(t, facts), AiReportPayload.imageNotes(t, facts))))
 			.orElseGet(() -> standard(facts, AiNotice.UNAVAILABLE));
 	}
 
+	/** Writes only the requested topics. */
 	private static ReportContent standard(ReportFacts facts, AiNotice notice) {
-		return with(facts, ReportTexts.summary(facts), ReportTexts.recommendations(facts), Narrative.ARTEMIS, notice,
-				facts.content().dependencies());
+		return with(facts, facts.sections().contains(ReportSection.SUMMARY) ? ReportTexts.summary(facts) : Map.of(),
+				facts.sections().contains(ReportSection.RECOMMENDATIONS) ? ReportTexts.recommendations(facts) : List.of(),
+				Narrative.ARTEMIS, notice, facts.content().dependencies());
 	}
 
 	private static ReportContent with(ReportFacts facts, Map<String, String> summary,

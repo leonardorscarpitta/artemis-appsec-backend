@@ -7,7 +7,6 @@ import java.util.Locale;
 import java.util.Map;
 
 import io.github.artemiscore.artemisappsec.report.domain.ReportContent;
-import io.github.artemiscore.artemisappsec.report.domain.ReportType;
 
 /** Standard summary and recommendations, written from the report's figures in both languages. */
 final class ReportTexts {
@@ -23,35 +22,17 @@ final class ReportTexts {
 
 	static Map<String, String> summary(ReportFacts facts) {
 		ReportContent c = facts.content();
-		if (c.dependencies() != null) {
-			return dependencySummary(c.dependencies());
-		}
 		ReportContent.Kpis k = c.kpis();
 		int critical = c.severity().getOrDefault("critical", 0);
 		int high = c.severity().getOrDefault("high", 0);
 		StringBuilder en = new StringBuilder();
 		StringBuilder pt = new StringBuilder();
-		if (facts.type() == ReportType.COMPLIANCE) {
-			List<ReportContent.OwaspCategory> top = topCategories(c, 2);
-			long affected = c.owasp().stream().filter(o -> !OwaspTop10.OTHER.equals(o.id()) && o.findings() > 0).count();
-			en.append("%d of the 10 OWASP Top 10 2021 categories have open findings.".formatted(affected));
-			pt.append("%d das 10 categorias do OWASP Top 10 2021 têm achados abertos.".formatted(affected));
-			if (!top.isEmpty()) {
-				en.append(" The most affected: ").append(categories(top, " and ")).append('.');
-				pt.append(" As mais afetadas: ").append(categories(top, " e ")).append('.');
-			}
-			en.append(" %s open in total (%d critical, %d high).".formatted(plural(k.open(), "finding", "findings"), critical, high));
-			pt.append(" %s no total (%d %s, %d %s).".formatted(plural(k.open(), "achado aberto", "achados abertos"), critical,
-					critical == 1 ? "crítico" : "críticos", high, high == 1 ? "alto" : "altos"));
-		}
-		else {
-			en.append("In this period, %s detected and %d fixed.".formatted(plural(k.opened(), "finding was", "findings were"), k.fixed()));
-			pt.append("Neste período, %s e %d %s.".formatted(plural(k.opened(), "achado foi detectado", "achados foram detectados"),
-					k.fixed(), k.fixed() == 1 ? "corrigido" : "corrigidos"));
-			en.append(" %s open (%d critical, %d high).".formatted(plural(k.open(), "finding remains", "findings remain"), critical, high));
-			pt.append(" %s (%d %s, %d %s).".formatted(plural(k.open(), "achado continua aberto", "achados continuam abertos"),
-					critical, critical == 1 ? "crítico" : "críticos", high, high == 1 ? "alto" : "altos"));
-		}
+		en.append("In this period, %s detected and %d fixed.".formatted(plural(k.opened(), "finding was", "findings were"), k.fixed()));
+		pt.append("Neste período, %s e %d %s.".formatted(plural(k.opened(), "achado foi detectado", "achados foram detectados"),
+				k.fixed(), k.fixed() == 1 ? "corrigido" : "corrigidos"));
+		en.append(" %s open (%d critical, %d high).".formatted(plural(k.open(), "finding remains", "findings remain"), critical, high));
+		pt.append(" %s (%d %s, %d %s).".formatted(plural(k.open(), "achado continua aberto", "achados continuam abertos"),
+				critical, critical == 1 ? "crítico" : "críticos", high, high == 1 ? "alto" : "altos"));
 		if (k.fixed() > 0) {
 			en.append(" Mean time to remediate: %s days.".formatted(String.format(Locale.US, "%.1f", k.mttrDays())));
 			pt.append(" Tempo médio de correção: %s dias.".formatted(String.format(PT_BR, "%.1f", k.mttrDays())));
@@ -63,13 +44,15 @@ final class ReportTexts {
 			en.append(" The highest risk is %s%s.".formatted(risk.cve(), risk.packageName() == null ? "" : " in " + risk.packageName()));
 			pt.append(" O maior risco é %s%s.".formatted(risk.cve(), risk.packageName() == null ? "" : " em " + risk.packageName()));
 		}
+		if (c.dependencies() != null) {
+			Map<String, String> sbom = dependencySummary(c.dependencies());
+			en.append(' ').append(sbom.get(EN));
+			pt.append(' ').append(sbom.get(PT));
+		}
 		return Map.of(EN, en.toString(), PT, pt.toString());
 	}
 
 	static List<Map<String, String>> recommendations(ReportFacts facts) {
-		if (facts.content().dependencies() != null) {
-			return dependencyRecommendations(facts.content().dependencies());
-		}
 		List<Map<String, String>> recs = new ArrayList<>();
 		if (facts.overdue() > 0) {
 			recs.add(text("%s past the remediation deadline (SLA): fix them first.".formatted(
@@ -108,6 +91,9 @@ final class ReportTexts {
 					"%s versão corrigida: avalie a exposição e considere uma alternativa ou uma aceitação de risco com prazo.".formatted(
 					plural(facts.withoutFix(), "dependência vulnerável ainda não tem", "dependências vulneráveis ainda não têm"))));
 		}
+		if (facts.content().dependencies() != null) {
+			recs.addAll(dependencyRecommendations(facts.content().dependencies()));
+		}
 		if (recs.isEmpty()) {
 			recs.add(text("No open findings need action: keep scanning regularly and keep the pipeline gates enabled.",
 					"Nenhum achado aberto exige ação: continue analisando com frequência e mantenha os gates do pipeline ativos."));
@@ -138,16 +124,9 @@ final class ReportTexts {
 		return Map.of(EN, en.toString(), PT, pt.toString());
 	}
 
+	/** Upgrades are already recommended from the open findings: the SBOM adds license review and missing SBOMs. */
 	private static List<Map<String, String>> dependencyRecommendations(ReportContent.Dependencies d) {
 		List<Map<String, String>> recs = new ArrayList<>();
-		d.vulnerableComponents().stream().limit(3).forEach(v -> {
-			String ids = String.join(", ", v.ids());
-			recs.add(v.fixedVersion() != null
-					? text("Upgrade %s %s to %s or later (%s).".formatted(v.name(), v.version(), v.fixedVersion(), ids),
-							"Atualize %s %s para %s ou posterior (%s).".formatted(v.name(), v.version(), v.fixedVersion(), ids))
-					: text("%s %s has no fixed version yet (%s): assess exposure or replace it.".formatted(v.name(), v.version(), ids),
-							"%s %s ainda não tem versão corrigida (%s): avalie a exposição ou substitua-o.".formatted(v.name(), v.version(), ids)));
-		});
 		if (d.withoutLicense() > 0) {
 			recs.add(text("Review the %s without a declared license before distributing the software.".formatted(
 					plural(d.withoutLicense(), "component", "components")),
@@ -160,11 +139,7 @@ final class ReportTexts {
 					"Ative a etapa SBOM e analise %s sem SBOM.".formatted(
 					d.withoutSbom().size() == 1 ? "o repositório" : "os %d repositórios".formatted(d.withoutSbom().size()))));
 		}
-		if (recs.isEmpty()) {
-			recs.add(text("No dependency needs action: keep the SBOM stage enabled and scan regularly.",
-					"Nenhuma dependência exige ação: mantenha a etapa SBOM ativa e analise com frequência."));
-		}
-		return recs.size() > MAX_RECOMMENDATIONS ? recs.subList(0, MAX_RECOMMENDATIONS) : recs;
+		return recs;
 	}
 
 	private static List<ReportContent.OwaspCategory> topCategories(ReportContent c, int n) {
@@ -173,10 +148,6 @@ final class ReportTexts {
 			.sorted(Comparator.comparingInt(ReportContent.OwaspCategory::findings).reversed())
 			.limit(n)
 			.toList();
-	}
-
-	private static String categories(List<ReportContent.OwaspCategory> list, String and) {
-		return String.join(and, list.stream().map(o -> "%s %s (%d)".formatted(o.id(), o.name(), o.findings())).toList());
 	}
 
 	private static String plural(long n, String one, String many) {
