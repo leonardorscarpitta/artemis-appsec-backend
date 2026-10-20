@@ -33,7 +33,8 @@ class ReportServiceImpl implements ReportService {
 
 	private static final Map<ReportType, Map<String, String>> TYPE_TITLES = Map.of(
 			ReportType.SUMMARY, Map.of(EN, "Security summary", PT, "Resumo de segurança"),
-			ReportType.COMPLIANCE, Map.of(EN, "OWASP Top 10 compliance", PT, "Conformidade OWASP Top 10"));
+			ReportType.COMPLIANCE, Map.of(EN, "OWASP Top 10 compliance", PT, "Conformidade OWASP Top 10"),
+			ReportType.DEPENDENCIES, Map.of(EN, "Dependencies (SBOM)", PT, "Dependências (SBOM)"));
 
 	private final ReportRepository reports;
 	private final ProjectService projects;
@@ -121,7 +122,7 @@ class ReportServiceImpl implements ReportService {
 		// AI texts exist only in the organization's language: say so when the reader uses another one.
 		String textLanguage = c.summary().containsKey(preferred) ? null : c.summary().keySet().stream().findFirst().orElse(null);
 		return new ReportDetails.Content(text.apply(c.summary()), c.kpis(), c.trend(), c.severity(), c.topRisks(), c.owasp(),
-				c.recommendations().stream().map(text).toList(), c.narrative(), c.aiNotice(), textLanguage);
+				c.recommendations().stream().map(text).toList(), c.narrative(), c.aiNotice(), textLanguage, c.dependencies());
 	}
 
 	private static String localized(Map<String, String> texts, Locale locale) {
