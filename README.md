@@ -20,6 +20,48 @@ Backend of Artemis, a SAST platform. The frontend lives in the [artemis-appsec-f
 
 **Naming:** users see the product as **Artemis**; technical identifiers use **artemisappsec** — Java package `io.github.artemiscore.artemisappsec`, Maven artifact, `spring.application.name`, configuration prefix `artemisappsec.*`, database name/user, OIDC client `artemisappsec-web`, audience `artemisappsec-api` and the local auth host `auth.artemisappsec.localhost`.
 
+## Architecture
+
+Artemis is fully containerized. Production runs on a Kubernetes cluster (k3s) synced by Argo CD; locally, the same services run with Docker Compose. Nothing is exposed directly to the internet: public traffic enters through a Cloudflare Tunnel.
+
+```mermaid
+flowchart LR
+  user([Browser]) -->|HTTPS| edge["Cloudflare edge<br/>DNS · TLS"]
+  edge -->|Cloudflare Tunnel<br/>outbound-only connection| cfd["cloudflared<br/>(2 replicas)"]
+
+  subgraph k8s["Kubernetes cluster (k3s) · managed by Argo CD"]
+    cfd --> gw["Istio Gateway<br/>(Gateway API HTTPRoutes)"]
+    gw -->|"artemisappsec… /"| fe["frontend<br/>nginx + Angular"]
+    gw -->|"artemisappsec… /api"| api["api<br/>Spring Boot 4 · Java 25"]
+    gw -->|"auth.artemisappsec… /"| kc["keycloak<br/>OIDC identity provider"]
+    api -->|JWKS, admin API| kc
+    api --> db[("PostgreSQL 18<br/>app + keycloak databases")]
+    kc --> db
+    scanner["scanner runner<br/>Gitleaks · Semgrep · Trivy · Grype · Syft · Hadolint"] -->|"internal job API<br/>(Bearer token)"| api
+  end
+
+  scanner -->|"git clone over SSH<br/>(per-repository deploy key)"| git[("GitHub · GitLab · Bitbucket")]
+  scanner -->|vulnerability database updates| vdb[("Trivy / Grype DBs<br/>(NVD, GHSA, distro trackers)")]
+  api -.->|"optional AI texts<br/>(de-identified)"| ai[("Claude API")]
+```
+
+| Layer | Component | Role |
+| --- | --- | --- |
+| Edge | **Cloudflare** | DNS, TLS certificates and DDoS protection for `artemisappsec.papopromines.com.br` and `auth.artemisappsec.papopromines.com.br`. |
+| Ingress | **Cloudflare Tunnel** (`cloudflared`, 2 replicas) | Opens an outbound-only connection from the cluster to Cloudflare, so the cluster has no open inbound ports and no public IP. |
+| Reverse proxy | **Istio Gateway** (Kubernetes Gateway API) | Routes by host and path: `/` → frontend, `/api` → API, `auth.` host → Keycloak. It blocks `/internal`, `/actuator` and `/api/docs` on the app host and the Keycloak admin console (`/admin`, `/realms/master`) on the auth host. |
+| Web | **frontend** (nginx serving the Angular build) | Static single-page app with strict security headers (CSP, HSTS, `frame-ancestors 'none'`). It talks only to `/api` and to Keycloak. |
+| Identity | **Keycloak 26** (with the Artemis sign-in theme) | Sign-in, registration and accounts (OpenID Connect, Authorization Code + PKCE). The API validates its JWTs (issuer + audience). |
+| Application | **api** (Spring Boot, modular monolith) | Organizations, repositories, pipelines, findings, policies and reports. It hands scan jobs to the runner and stores the results. |
+| Workers | **scanner runner** | Polls the API for jobs, clones the repository into an in-memory workspace and runs the security tools as separate programs. It sends back normalized findings, logs and the SBOM, then wipes the workspace. It runs non-root with a read-only filesystem, dropped capabilities and CPU/memory limits. |
+| Data | **PostgreSQL 18** | One instance with two databases (app and Keycloak) on a persistent volume. It is reachable only inside the cluster. |
+
+**Request flow:** the browser opens `artemisappsec.papopromines.com.br`. Cloudflare terminates TLS and forwards the request through the tunnel to `cloudflared`, which passes it to the Istio gateway, which routes it to the frontend or the API. To sign in, the app redirects to `auth.artemisappsec.papopromines.com.br` (Keycloak, same tab) and gets an access token back. It then calls `/api` with that token and the `X-Artemis-Organization` header.
+
+**Scan flow:** a user starts a scan, so the API queues a pipeline run. The scanner claims it through the internal job API (in-cluster only, never routed by the gateway) and clones the repository over SSH with that repository's deploy key. It then runs the enabled stages and reports each one back. The API applies the policy gates and stores the findings.
+
+**Local development** uses the same containers through Docker Compose. `artemis-appsec-backend` starts db, keycloak, a Caddy TLS proxy for Keycloak, Mailpit, the api, an internal Caddy gateway for the scanner, and the scanner; `artemis-appsec-frontend` starts the Angular dev server. Locally, Caddy is the reverse proxy and there is no tunnel. Images for production are built from `main`, tagged `latest` and pulled by the cluster; Argo CD keeps the cluster in sync with the deployment manifests.
+
 ## Running locally
 
 Everything runs in Docker:
